@@ -10,6 +10,25 @@ import { BlockRenderer } from "@/components/editor/BlockRenderer";
 import { OptionsBlock, OptionsProperties } from "@/components/editor/OptionsBlock";
 import { FormBlock, FormProperties } from "@/components/editor/FormBlock";
 import { TextareaBlock, TextareaProperties } from "@/components/editor/TextareaBlock";
+import { ArgumentsBlock, ArgumentsProperties } from "@/components/editor/ArgumentsBlock";
+import { AlertBlock, AlertProperties } from "@/components/editor/AlertBlock";
+import { FaqBlock, FaqProperties } from "@/components/editor/FaqBlock";
+import { CarouselBlock, CarouselProperties } from "@/components/editor/CarouselBlock";
+import { TestimonialsBlock, TestimonialsProperties } from "@/components/editor/TestimonialsBlock";
+import { BeforeAfterBlock, BeforeAfterProperties } from "@/components/editor/BeforeAfterBlock";
+import { AudioBlock, AudioProperties } from "@/components/editor/AudioBlock";
+import { SpacerBlock } from "@/components/editor/SpacerBlock";
+import { LoadingBlock, LoadingProperties } from "@/components/editor/LoadingBlock";
+import { TimerBlock } from "@/components/editor/TimerBlock";
+import { DelayBlock, DelayProperties } from "@/components/editor/DelayBlock";
+import { LevelBlock, LevelProperties } from "@/components/editor/LevelBlock";
+import { NotificationBlock, NotificationProperties } from "@/components/editor/NotificationBlock";
+import { ScriptBlock } from "@/components/editor/ScriptBlock";
+import { DataBlock } from "@/components/editor/DataBlocks";
+import { GamificationBlock } from "@/components/editor/GamificationBlock";
+import { BodyMapBlock } from "@/components/editor/BodyMapBlock";
+import { PlansBlock } from "@/components/editor/PlansBlock";
+import { SimpleElementProperties, type SimpleKind } from "@/components/editor/SimpleElementProperties";
 import type { CanvasBlock, EditorStep } from "@/components/editor/types";
 import { groupBlocksByStep } from "@/lib/editor/document";
 import { readEditorDocumentCache, writeEditorDocumentCache } from "@/lib/editor/cache";
@@ -51,6 +70,8 @@ const components = [
   { group: "Dados", items: ["Nível", "Peso", "Altura", "IMC", "Idade", "Tendência", "Evolutivo", "Gamificação", "Mapa Corporal"] },
   { group: "Checkout", items: ["Planos"] },
 ];
+
+const lockedComponents = new Set<string>([]);
 
 const integrations = ["Google Analytics GA4", "Google Tag Manager", "Meta/Facebook Pixel", "Google Site Verification", "Jivo", "Crisp", "TikTok", "N8N", "Make"];
 
@@ -105,7 +126,7 @@ export default function Home() {
   }
 
   return <ProductFrame toast={toast} sidebarCollapsed={sidebarCollapsed} setSidebarCollapsed={setSidebarCollapsed} screen={screen} editorView={editorView} setScreen={setScreen} setEditorView={setEditorView} setInEditor={setInEditor} notify={notify} published={published} setPublished={setPublished}>
-    <Dashboard supabase={supabase} userId={user.id} openEditor={openEditor} notify={notify} />
+    <Dashboard supabase={supabase} userId={user?.id ?? "local-user"} openEditor={openEditor} notify={notify} />
   </ProductFrame>;
 }
 
@@ -458,6 +479,10 @@ function BlockIcon({ item }: { item: string }) {
   return <svg className="block-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{icon}</svg>;
 }
 
+function LockIcon() {
+  return <svg className="component-lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>;
+}
+
 function EditorActionIcon({ type }: { type: "edit" | "move" | "duplicate" | "delete" }) {
   const paths = {
     edit: <><path d="m4 17 2-.5L18 4.5a1.7 1.7 0 0 0-2.4-2.4L3.6 14.1 3 17Z" /><path d="m14.5 3.5 2 2" /></>,
@@ -479,17 +504,22 @@ function EditorCanvas({ supabase, funnelId, notify, stepsData, onBack }: { supab
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [dragOverCanvas, setDragOverCanvas] = useState(false);
   const [blocksByStep, setBlocksByStep] = useState<Record<string, CanvasBlock[]>>(cachedDocument?.blocksByStep ?? {});
+  const persistQueue = useRef<Promise<void>>(Promise.resolve());
   const [selectedBlockId, setSelectedBlockId] = useState<number | null>(null);
   const [editingBlockId, setEditingBlockId] = useState<number | null>(null);
   const [movingBlockId, setMovingBlockId] = useState<number | null>(null);
+  const [dropIndicator, setDropIndicator] = useState<{ targetId: number; position: "before" | "after" } | null>(null);
   const [blocksLoaded, setBlocksLoaded] = useState(Boolean(cachedDocument));
   const nextBlockId = useRef(1);
 
   useEffect(() => {
-    if (!supabase || !funnelId) return;
+    const client = supabase;
+    if (!client || !funnelId) return;
     let active = true;
     async function loadSteps() {
-      const result = await supabase.from("funnel_steps").select("id, title, step_type, position").eq("funnel_id", funnelId).order("position");
+      const db = client;
+      if (!db) return;
+      const result = await db.from("funnel_steps").select("id, title, step_type, position").eq("funnel_id", funnelId).order("position");
       if (!active || result.error || !result.data) return;
       const loadedSteps = result.data.map((step) => ({
         id: step.id,
@@ -498,7 +528,7 @@ function EditorCanvas({ supabase, funnelId, notify, stepsData, onBack }: { supab
         active: false,
       }));
       const stepIds = loadedSteps.map((step) => step.id);
-      const blockResult = stepIds.length ? await supabase.from("step_blocks").select("step_id, position, block_type, content").in("step_id", stepIds).order("position") : { data: [], error: null };
+      const blockResult = stepIds.length ? await db.from("step_blocks").select("step_id, position, block_type, content").in("step_id", stepIds).order("position") : { data: [], error: null };
       if (!active) return;
       setEditableSteps(loadedSteps);
       const remoteDocument = groupBlocksByStep(stepIds, blockResult.data ?? []);
@@ -527,19 +557,62 @@ function EditorCanvas({ supabase, funnelId, notify, stepsData, onBack }: { supab
   }, [activeStepId]);
   const blocksCacheKey = activeStepId ? "izquiz:blocks:" + activeStepId : null;
 
-  function addBlock(item: string) {
+  function addBlock(item: string, insertAt?: number) {
     const block = { id: nextBlockId.current++, item, content: item === "Texto" ? "Texto de exemplo" : item === "Alerta" ? "Atenção!" : item };
-    setBlocks((current) => [...current, block]);
+    setBlocks((current) => {
+      if (insertAt === undefined || insertAt < 0 || insertAt > current.length) return [...current, block];
+      const next = [...current];
+      next.splice(insertAt, 0, block);
+      return next;
+    });
     setSelectedBlockId(block.id);
     notify(item + " adicionado ao passo");
   }
 
   function dropComponent(event: React.DragEvent<HTMLDivElement>) {
     event.preventDefault();
+    event.stopPropagation();
     setDragOverCanvas(false);
     const item = event.dataTransfer.getData("text/plain") || draggedItem;
-    if (item) addBlock(item);
+    const insertAt = dropIndicator ? blocks.findIndex((block) => block.id === dropIndicator.targetId) + (dropIndicator.position === "after" ? 1 : 0) : undefined;
+    if (item) addBlock(item, insertAt);
+    setDropIndicator(null);
     setDraggedItem(null);
+  }
+
+  function updateDropIndicator(event: React.DragEvent<HTMLDivElement>, targetId: number) {
+    const isSupported = event.dataTransfer.types.includes("application/x-izquiz-block") || event.dataTransfer.types.includes("text/plain");
+    if (!isSupported) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    setDropIndicator({ targetId, position: event.clientY < rect.top + rect.height / 2 ? "before" : "after" });
+    setDragOverCanvas(true);
+  }
+
+  function dropOnBlock(event: React.DragEvent<HTMLDivElement>, targetId: number) {
+    const movingBlock = event.dataTransfer.types.includes("application/x-izquiz-block");
+    if (movingBlock) {
+      event.preventDefault();
+      event.stopPropagation();
+      const sourceId = Number(event.dataTransfer.getData("application/x-izquiz-block"));
+      const sourceIndex = blocks.findIndex((block) => block.id === sourceId);
+      const targetIndex = blocks.findIndex((block) => block.id === targetId);
+      if (sourceIndex >= 0 && targetIndex >= 0 && sourceIndex !== targetIndex) {
+        const insertAt = targetIndex + (dropIndicator?.position === "after" ? 1 : 0);
+        setBlocks((current) => {
+          const next = [...current];
+          const [moved] = next.splice(sourceIndex, 1);
+          const adjustedIndex = sourceIndex < insertAt ? insertAt - 1 : insertAt;
+          next.splice(Math.max(0, Math.min(adjustedIndex, next.length)), 0, moved);
+          return next;
+        });
+      }
+      setDropIndicator(null);
+      setMovingBlockId(null);
+      return;
+    }
+    dropComponent(event);
   }
 
   function updateBlockContent(content: string) {
@@ -672,41 +745,34 @@ function EditorCanvas({ supabase, funnelId, notify, stepsData, onBack }: { supab
     setMovingBlockId(id);
   }
 
-  function reorderBlock(event: React.DragEvent<HTMLDivElement>, targetId: number) {
-    event.preventDefault();
-    event.stopPropagation();
-    const sourceId = Number(event.dataTransfer.getData("application/x-izquiz-block"));
-    if (!sourceId || sourceId === targetId) {
-      setMovingBlockId(null);
-      return;
-    }
-    setBlocks((current) => {
-      const sourceIndex = current.findIndex((block) => block.id === sourceId);
-      const targetIndex = current.findIndex((block) => block.id === targetId);
-      if (sourceIndex < 0 || targetIndex < 0) return current;
-      const next = [...current];
-      const [moved] = next.splice(sourceIndex, 1);
-      next.splice(targetIndex, 0, moved);
-      return next;
-    });
-    setMovingBlockId(null);
-  }
-
   const selectedBlock = blocks.find((block) => block.id === selectedBlockId) ?? null;
 
   function renderBlock(block: CanvasBlock) {
     const extractedBlock = BlockRenderer({ block, isEditing: editingBlockId === block.id, onChange: updateBlockContent, onStopEditing: () => setEditingBlockId(null), onNotify: notify });
     if (extractedBlock) return extractedBlock;
-    if (block.item === "Alerta") return <div className="canvas-alert"><span className="canvas-alert-icon">i</span><strong>{block.content}</strong></div>;
-    if (block.item === "Argumentos") return <div className="canvas-arguments"><div><strong>Argumento 1</strong><span>Descrição do argumento 1</span><span className="argument-image">▧</span></div><div><strong>Argumento 2</strong><span>Descrição do argumento 2</span><span className="argument-image">▧</span></div></div>;
+    if (block.item === "Alerta") return <AlertBlock block={block} />;
+    if (block.item === "Argumentos") return <ArgumentsBlock block={block} onNotify={notify} />;
     if (block.item === "Vídeo") {
       const embedSource = block.videoEmbed?.match(/src\s*=\s*["']([^"']+)["']/i)?.[1] ?? "";
       return embedSource ? <div className="canvas-video"><iframe src={embedSource} title="Prévia do vídeo" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /></div> : <div className="canvas-media-placeholder"><BlockIcon item="Vídeo" /><strong>Insira um código de incorporação de vídeo</strong></div>;
     }
     if (block.item === "Opções") return <OptionsBlock block={block} onNotify={notify} />;
-    if (block.item === "FAQ") return <div className="canvas-faq"><strong>Perguntas frequentes</strong><button>Como funciona? <span>＋</span></button><button>Tenho outra dúvida <span>＋</span></button></div>;
-    if (block.item === "Depoimentos") return <div className="canvas-testimonial"><span>“</span><p>Este é um depoimento de exemplo para o seu quiz.</p><strong>Nome da pessoa</strong></div>;
-    if (block.item === "Áudio") return <div className="canvas-audio"><button>▶</button><div><strong>Áudio do quiz</strong><span>00:00 ━━━━━━━━━ 00:30</span></div></div>;
+    if (block.item === "FAQ") return <FaqBlock block={block} />;
+    if (block.item === "Carrossel") return <CarouselBlock block={block} />;
+    if (block.item === "Depoimentos") return <TestimonialsBlock block={block} />;
+    if (block.item === "Antes/Depois") return <BeforeAfterBlock block={block} />;
+    if (block.item === "Áudio") return <AudioBlock block={block} />;
+    if (block.item === "Espaço") return <SpacerBlock block={block} />;
+    if (block.item === "Loading") return <LoadingBlock block={block} />;
+    if (block.item === "Timer") return <TimerBlock block={block} />;
+    if (block.item === "Delay") return <DelayBlock block={block} />;
+    if (block.item === "Notificação") return <NotificationBlock key={`notification-${block.id}-${block.notificationDuration ?? 5}`} block={block} />;
+    if (block.item === "Script") return <ScriptBlock block={block} />;
+    if (block.item === "Nível") return <LevelBlock block={block} />;
+    if (["Peso", "Altura", "IMC", "Idade", "Tendência", "Evolutivo"].includes(block.item)) return <DataBlock block={block} />;
+    if (block.item === "Gamificação") return <GamificationBlock block={block} />;
+    if (block.item === "Mapa Corporal") return <BodyMapBlock block={block} />;
+    if (block.item === "Planos") return <PlansBlock block={block} />;
     if (block.item === "Formulário") return <FormBlock block={block} onNotify={notify} />;
     if (block.item === "Área de Texto") return <TextareaBlock block={block} onNotify={notify} />;
     return <div className="canvas-generic-block"><BlockIcon item={block.item} /><strong>{block.content}</strong></div>;
@@ -718,7 +784,9 @@ function EditorCanvas({ supabase, funnelId, notify, stepsData, onBack }: { supab
       return () => { active = false; };
     }
     async function loadBlocks() {
-      const blockResult = await supabase.from("step_blocks").select("position, block_type, content").eq("step_id", activeStepId).order("position");
+      const client = supabase;
+      if (!client) return;
+      const blockResult = await client.from("step_blocks").select("position, block_type, content").eq("step_id", activeStepId).order("position");
       if (!active) return;
       if (blockResult.error) {
         notify("Não foi possível carregar os componentes");
@@ -741,28 +809,33 @@ function EditorCanvas({ supabase, funnelId, notify, stepsData, onBack }: { supab
     return () => { active = false; };
   }, [supabase, funnelId, activeStepId, notify, blocksCacheKey, setBlocks, blocksLoaded]);
 
-  const persistBlocks = useCallback(async (snapshot: CanvasBlock[] = blocks, stepId: string | null = activeStepId) => {
-    if (!supabase || !funnelId || !stepId || !blocksLoaded) return;
-    if (blocksCacheKey) window.localStorage.setItem(blocksCacheKey, JSON.stringify(snapshot));
-    const deleted = await supabase.from("step_blocks").delete().eq("step_id", stepId);
-    if (deleted.error) { notify(`Erro ao salvar componentes: ${deleted.error.message}`); return; }
-    if (snapshot.length === 0) return;
-    const rows = snapshot.map((block, position) => { const settings = Object.fromEntries(Object.entries(block).filter(([key]) => key !== "id" && key !== "item" && key !== "content")); return { step_id: stepId, position, block_type: block.item, content: { content: block.content, ...settings } }; });
-    const inserted = await supabase.from("step_blocks").insert(rows);
-    if (inserted.error) notify(`Erro ao salvar componentes: ${inserted.error.message}`);
+  const persistBlocks = useCallback((snapshot: CanvasBlock[] = blocks, stepId: string | null = activeStepId) => {
+    if (!supabase || !funnelId || !stepId || !blocksLoaded) return Promise.resolve();
+    const cacheKey = stepId === activeStepId ? blocksCacheKey : `izquiz:blocks:${stepId}`;
+    if (cacheKey) window.localStorage.setItem(cacheKey, JSON.stringify(snapshot));
+    const save = async () => {
+      const deleted = await supabase.from("step_blocks").delete().eq("step_id", stepId);
+      if (deleted.error) { notify(`Erro ao salvar componentes: ${deleted.error.message}`); return; }
+      if (snapshot.length === 0) return;
+      const rows = snapshot.map((block, position) => { const settings = Object.fromEntries(Object.entries(block).filter(([key]) => key !== "id" && key !== "item" && key !== "content")); return { step_id: stepId, position, block_type: block.item, content: { content: block.content, ...settings } }; });
+      const inserted = await supabase.from("step_blocks").insert(rows);
+      if (inserted.error) notify(`Erro ao salvar componentes: ${inserted.error.message}`);
+    };
+    persistQueue.current = persistQueue.current.then(save, save);
+    return persistQueue.current;
   }, [blocks, activeStepId, blocksLoaded, blocksCacheKey, supabase, funnelId, notify]);
 
   useEffect(() => {
     if (!blocksLoaded || !supabase || !funnelId || !activeStepId) return;
     const saveTimer = window.setTimeout(() => { void persistBlocks(); }, 250);
-    return () => { window.clearTimeout(saveTimer); void persistBlocks(); };
+    return () => { window.clearTimeout(saveTimer); };
   }, [blocks, blocksLoaded, supabase, funnelId, activeStepId, persistBlocks]);
 
   useEffect(() => {
-    const publishHandler = () => { void persistBlocks(); };
+    const publishHandler = () => { void persistBlocks().then(() => notify("Etapa criada com sucesso!")); };
     window.addEventListener("izquiz:publish", publishHandler);
     return () => window.removeEventListener("izquiz:publish", publishHandler);
-  }, [persistBlocks]);
+  }, [persistBlocks, notify]);
 
   return <div className="editor-page">
     <div className="step-column">
@@ -771,13 +844,13 @@ function EditorCanvas({ supabase, funnelId, notify, stepsData, onBack }: { supab
     </div>
     <div className="component-column">
       <div className="component-search">⌕　Buscar componente...</div>
-      {components.map((group) => <div className="component-group" key={group.group}><div className="group-title">{group.group}<span>⌃</span></div><div className="component-grid">{group.items.map((item) => <button key={group.group + "-" + item} draggable onMouseDown={() => setDraggedItem(item)} onDragStart={(event) => { event.dataTransfer.setData("text/plain", item); setDraggedItem(item); }} onDragEnd={() => setDraggedItem(null)} onClick={() => addBlock(item)} className={draggedItem === item ? "component-dragging" : ""}><BlockIcon item={item} />{item}</button>)}</div></div>)}
+      {components.map((group) => <div className="component-group" key={group.group}><div className="group-title">{group.group}<span>⌃</span></div><div className="component-grid">{group.items.map((item) => { const locked = lockedComponents.has(item); return <button key={group.group + "-" + item} type="button" disabled={locked} draggable={!locked} onDragStart={(event) => { if (locked) return; event.dataTransfer.setData("text/plain", item); event.dataTransfer.effectAllowed = "copy"; setDraggedItem(item); }} onDragEnd={() => setDraggedItem(null)} onClick={() => { if (locked) { notify(`${item}: componente em desenvolvimento`); return; } addBlock(item); }} className={`${draggedItem === item ? "component-dragging" : ""} ${locked ? "component-locked" : ""}`}><BlockIcon item={item} /><span>{item}</span>{locked && <span className="component-lock" aria-label={`${item} bloqueado`} title="Componente em desenvolvimento"><LockIcon /></span>}</button>; })}</div></div>)}
     </div>
     <div className="canvas-wrap">
       <button className="templates-btn" onClick={() => notify("Galeria de modelos em breve")}>▣　Modelos</button>
-      <div className={"canvas " + (dragOverCanvas ? "canvas-drop-active" : "")} onDragOver={(event) => { event.preventDefault(); setDragOverCanvas(true); }} onDragLeave={() => setDragOverCanvas(false)} onDrop={dropComponent} onMouseUp={() => { if (draggedItem) { addBlock(draggedItem); setDraggedItem(null); } }}>
+      <div className={"canvas " + (dragOverCanvas ? "canvas-drop-active" : "")} onDragOver={(event) => { event.preventDefault(); if (event.target === event.currentTarget) setDropIndicator(null); setDragOverCanvas(true); }} onDragLeave={() => { setDragOverCanvas(false); setDropIndicator(null); }} onDrop={dropComponent}>
         <div className="canvas-progress" />
-        {blocks.length === 0 ? <div className="canvas-empty-state"><div className="canvas-empty-icon">⌁</div><strong>{dragOverCanvas ? "Solte aqui!" : "Canvas vazio"}</strong><span>{dragOverCanvas ? "Solte para adicionar o componente" : "Arraste um componente da barra lateral para começar"}</span></div> : <div className="canvas-content">{blocks.map((block) => <div key={block.id} className={"canvas-block " + (selectedBlockId === block.id ? "is-selected" : "") + (movingBlockId === block.id ? " is-moving" : "")} draggable onDragStart={(event) => startMovingBlock(event, block.id)} onDragEnd={() => setMovingBlockId(null)} onClick={() => setSelectedBlockId(block.id)} onDoubleClick={() => { setSelectedBlockId(block.id); setEditingBlockId(block.id); }} onMouseEnter={() => setSelectedBlockId(block.id)} onDragOver={(event) => { if (event.dataTransfer.types.includes("application/x-izquiz-block")) event.preventDefault(); }} onDrop={(event) => reorderBlock(event, block.id)}>{renderBlock(block)}{selectedBlockId === block.id && <div className="canvas-block-actions"><button title="Editar elemento" aria-label="Editar elemento" onClick={(event) => { event.stopPropagation(); setEditingBlockId(block.id); }}><EditorActionIcon type="edit" /></button><button title="Arraste para mover o elemento" aria-label="Arraste para mover o elemento" draggable onDragStart={(event) => startMovingBlock(event, block.id)} onDragEnd={() => setMovingBlockId(null)}><EditorActionIcon type="move" /></button><button title="Duplicar elemento" aria-label="Duplicar elemento" onClick={(event) => { event.stopPropagation(); duplicateSelectedBlock(); }}><EditorActionIcon type="duplicate" /></button><button title="Excluir elemento" aria-label="Excluir elemento" onClick={(event) => { event.stopPropagation(); removeSelectedBlock(); }}><EditorActionIcon type="delete" /></button></div>}{editingBlockId === block.id && block.item === "Texto" && <div className="inline-editor-toolbar" onClick={(event) => event.stopPropagation()}><button title="Cor do texto" type="button">◉</button><button title="Emoji" type="button">☺</button><button title="Variáveis" type="button">{"{}"}</button><button title="Tamanho da fonte" type="button">T</button><select title="Tamanho da fonte" value={block.fontSize ?? 16} onChange={(event) => onTextStyleChange({ fontSize: Number(event.target.value) })}><option value="12">12px</option><option value="14">14px</option><option value="16">16px</option><option value="18">18px</option><option value="24">24px</option><option value="32">32px</option></select><button title="Negrito" type="button" className={block.bold ? "toolbar-active" : ""} onClick={() => onTextStyleChange({ bold: !block.bold })}><b>B</b></button><button title="Itálico" type="button" className={block.italic ? "toolbar-active" : ""} onClick={() => onTextStyleChange({ italic: !block.italic })}><i>I</i></button><button title="Sublinhado" type="button" className={block.underline ? "toolbar-active" : ""} onClick={() => onTextStyleChange({ underline: !block.underline })}><u>U</u></button><button title="Lista" type="button">☷</button><button title="Linha" type="button">—</button><button title="Alinhamento" type="button">≡</button></div>}</div>)}</div>}
+        {blocks.length === 0 ? <div className="canvas-empty-state"><div className="canvas-empty-icon">⌁</div><strong>{dragOverCanvas ? "Solte aqui!" : "Canvas vazio"}</strong><span>{dragOverCanvas ? "Solte para adicionar o componente" : "Arraste um componente da barra lateral para começar"}</span></div> : <div className="canvas-content">{blocks.map((block) => <div key={block.id} className={`canvas-block ${selectedBlockId === block.id ? "is-selected" : ""} ${movingBlockId === block.id ? "is-moving" : ""} ${dropIndicator?.targetId === block.id ? `drop-${dropIndicator.position}` : ""}`} draggable onDragStart={(event) => startMovingBlock(event, block.id)} onDragEnd={() => { setMovingBlockId(null); setDropIndicator(null); }} onClick={() => setSelectedBlockId(block.id)} onDoubleClick={() => { setSelectedBlockId(block.id); setEditingBlockId(block.id); }} onDragOver={(event) => updateDropIndicator(event, block.id)} onDrop={(event) => dropOnBlock(event, block.id)}>{renderBlock(block)}{selectedBlockId === block.id && <div className="canvas-block-actions"><button title="Editar elemento" aria-label="Editar elemento" onClick={(event) => { event.stopPropagation(); setEditingBlockId(block.id); }}><EditorActionIcon type="edit" /></button><button title="Arraste para mover o elemento" aria-label="Arraste para mover o elemento" draggable onDragStart={(event) => startMovingBlock(event, block.id)} onDragEnd={() => setMovingBlockId(null)}><EditorActionIcon type="move" /></button><button title="Duplicar elemento" aria-label="Duplicar elemento" onClick={(event) => { event.stopPropagation(); duplicateSelectedBlock(); }}><EditorActionIcon type="duplicate" /></button><button title="Excluir elemento" aria-label="Excluir elemento" onClick={(event) => { event.stopPropagation(); removeSelectedBlock(); }}><EditorActionIcon type="delete" /></button></div>}{editingBlockId === block.id && block.item === "Texto" && <div className="inline-editor-toolbar" onClick={(event) => event.stopPropagation()}><button title="Cor do texto" type="button">◉</button><button title="Emoji" type="button">☺</button><button title="Variáveis" type="button">{"{}"}</button><button title="Tamanho da fonte" type="button">T</button><select title="Tamanho da fonte" value={block.fontSize ?? 16} onChange={(event) => onTextStyleChange({ fontSize: Number(event.target.value) })}><option value="12">12px</option><option value="14">14px</option><option value="16">16px</option><option value="18">18px</option><option value="24">24px</option><option value="32">32px</option></select><button title="Negrito" type="button" className={block.bold ? "toolbar-active" : ""} onClick={() => onTextStyleChange({ bold: !block.bold })}><b>B</b></button><button title="Itálico" type="button" className={block.italic ? "toolbar-active" : ""} onClick={() => onTextStyleChange({ italic: !block.italic })}><i>I</i></button><button title="Sublinhado" type="button" className={block.underline ? "toolbar-active" : ""} onClick={() => onTextStyleChange({ underline: !block.underline })}><u>U</u></button><button title="Lista" type="button">☷</button><button title="Linha" type="button">—</button><button title="Alinhamento" type="button">≡</button></div>}</div>)}</div>}
       </div>
     </div>
     <Properties notify={notify} selectedBlock={selectedBlock} onStartEditing={() => selectedBlock && setEditingBlockId(selectedBlock.id)} onTextChange={updateBlockContent} onBlockChange={(patch) => { if (selectedBlockId === null) return; setBlocks((current) => current.map((block) => block.id === selectedBlockId ? { ...block, ...patch } : block)); }} />
@@ -791,6 +864,8 @@ function VideoProperties({ notify, block, onBlockChange }: { notify: (message: s
   return <aside className="properties"><h2>Propriedades do Vídeo</h2><div className="properties-tabs"><button className="active" type="button">Configurações</button><button type="button" onClick={() => notify("Design do vídeo selecionado")}>Design</button></div><div className="property-section"><label>Plataforma</label><select value={platform} onChange={(event) => onBlockChange({ videoPlatform: event.target.value as CanvasBlock["videoPlatform"] })}><option value="muve">❖　Muve</option><option value="youtube">▶　YouTube</option><option value="vturb">▷　VTurb</option></select></div><div className="property-section"><label>Código de Incorporação</label><textarea value={block.videoEmbed ?? ""} placeholder={`<iframe src='https://${platform === "youtube" ? "youtube.com/embed/..." : platform === "muve" ? "muve.com/embed/..." : "vturb.com/embed/..."}'></iframe>`} onChange={(event) => onBlockChange({ videoEmbed: event.target.value })} /></div></aside>;
 }
 
+function SimplePropertiesRouter({ block, onBlockChange }: { block: CanvasBlock; onBlockChange: (patch: Partial<CanvasBlock>) => void }) { return <SimpleElementProperties kind={block.item as SimpleKind} block={block} onBlockChange={onBlockChange} />; }
+
 function Properties({ notify, selectedBlock, onStartEditing, onTextChange, onBlockChange }: { notify: (message: string) => void; selectedBlock: CanvasBlock | null; onStartEditing: () => void; onTextChange: (content: string) => void; onBlockChange: (patch: Partial<CanvasBlock>) => void }) {
   const title = selectedBlock ? "Propriedades do " + selectedBlock.item : "Propriedades do Step";
   const button = selectedBlock?.item === "Botão";
@@ -800,6 +875,19 @@ function Properties({ notify, selectedBlock, onStartEditing, onTextChange, onBlo
   if (selectedBlock?.item === "Opções") return <aside className="properties"><h2>Propriedades das Opções</h2><OptionsProperties block={selectedBlock} onBlockChange={onBlockChange} /></aside>;
   if (selectedBlock?.item === "Formulário") return <aside className="properties"><h2>Propriedades do Formulário</h2><FormProperties block={selectedBlock} onBlockChange={onBlockChange} /></aside>;
   if (selectedBlock?.item === "Área de Texto") return <aside className="properties"><h2>Textarea</h2><TextareaProperties block={selectedBlock} onBlockChange={onBlockChange} /></aside>;
+  if (selectedBlock?.item === "Argumentos") return <aside className="properties"><h2>Propriedades dos Argumentos</h2><ArgumentsProperties block={selectedBlock} onBlockChange={onBlockChange} /></aside>;
+  if (selectedBlock?.item === "Alerta") return <aside className="properties"><h2>Propriedades do Alerta</h2><AlertProperties block={selectedBlock} onTextChange={onTextChange} onBlockChange={onBlockChange} /></aside>;
+  if (selectedBlock?.item === "FAQ") return <aside className="properties"><h2>FAQ</h2><FaqProperties block={selectedBlock} onBlockChange={onBlockChange} /></aside>;
+  if (selectedBlock?.item === "Carrossel") return <aside className="properties"><h2>Propriedades do Carrossel</h2><CarouselProperties block={selectedBlock} onBlockChange={onBlockChange} /></aside>;
+  if (selectedBlock?.item === "Depoimentos") return <aside className="properties"><h2>Propriedades dos Depoimentos</h2><TestimonialsProperties block={selectedBlock} onBlockChange={onBlockChange} /></aside>;
+  if (selectedBlock?.item === "Antes/Depois") return <aside className="properties"><h2>Propriedades do Antes/Depois</h2><BeforeAfterProperties block={selectedBlock} onBlockChange={onBlockChange} /></aside>;
+  if (selectedBlock?.item === "Áudio") return <aside className="properties"><h2>Propriedades do Áudio</h2><AudioProperties block={selectedBlock} onBlockChange={onBlockChange} /></aside>;
+    if (selectedBlock?.item === "Loading") return <aside className="properties"><h2>Propriedades do Loading</h2><LoadingProperties block={selectedBlock} onBlockChange={onBlockChange} /></aside>;
+    if (selectedBlock?.item === "Notificação") return <aside className="properties"><h2>Propriedades da Notificação</h2><NotificationProperties block={selectedBlock} onBlockChange={onBlockChange} /></aside>;
+  if (selectedBlock?.item === "Delay") return <aside className="properties"><h2>Propriedades do Delay</h2><DelayProperties block={selectedBlock} onBlockChange={onBlockChange} /></aside>;
+  if (selectedBlock?.item === "Nível") return <aside className="properties"><h2>Propriedades do Nível</h2><LevelProperties block={selectedBlock} onBlockChange={onBlockChange} /></aside>;
+  if (selectedBlock && ["Espaço", "Timer", "Script", "Peso", "Altura", "IMC", "Idade", "Tendência", "Evolutivo", "Gamificação", "Mapa Corporal", "Planos"].includes(selectedBlock.item)) return <aside className="properties"><h2>Propriedades do {selectedBlock.item}</h2><SimplePropertiesRouter block={selectedBlock} onBlockChange={onBlockChange} /></aside>;
+  if (selectedBlock?.item === "Texto") return <aside className="properties"><h2>Propriedades do Texto</h2><div className="property-section"><label>Conteúdo do Texto</label><small>Editar o conteúdo do texto</small><input value={selectedBlock.content} onFocus={onStartEditing} onChange={(event) => onTextChange(event.target.value)} /></div></aside>;
   return <aside className="properties"><h2>{title}</h2>{selectedBlock?.item === "Texto" ? <><button className="properties-tab active">Configurações</button><div className="property-section"><label>Conteúdo do Texto</label><small>Editar o conteúdo do texto</small><input value={selectedBlock.content} onFocus={onStartEditing} onChange={(event) => onTextChange(event.target.value)} /></div></> : image ? <><div className="properties-tabs"><button className="active">Configurações</button><button onClick={() => notify("Design da imagem selecionado")}>Design</button></div><div className="property-section"><label>Selecionar Imagem</label><small>Escolha a imagem para exibir</small><button className="image-upload-control" onClick={() => setShowImagePicker(true)}>↥<span>Clique para fazer upload<br />ou arraste uma imagem aqui</span></button>{selectedBlock.imageUrl && <button className="remove-image-btn" onClick={() => onBlockChange({ imageUrl: undefined })}>♧ Remover imagem</button>}</div><div className="property-section"><label>Alinhamento Horizontal</label><div className="alignment-buttons"><button className={selectedBlock.imageAlign === "left" ? "active" : ""} onClick={() => onBlockChange({ imageAlign: "left" })}>≡</button><button className={!selectedBlock.imageAlign || selectedBlock.imageAlign === "center" ? "active" : ""} onClick={() => onBlockChange({ imageAlign: "center" })}>≡</button><button className={selectedBlock.imageAlign === "right" ? "active" : ""} onClick={() => onBlockChange({ imageAlign: "right" })}>≡</button></div></div><div className="property-section"><label>Largura</label><small>Largura da imagem em porcentagem</small><input type="range" min="20" max="100" value={selectedBlock.imageWidth ?? 100} onChange={(event) => onBlockChange({ imageWidth: Number(event.target.value) })} /></div><div className="property-section"><label>Altura</label><small>Altura da imagem em pixels</small><input type="range" min="100" max="700" value={selectedBlock.imageHeight ?? 220} onChange={(event) => onBlockChange({ imageHeight: Number(event.target.value) })} /></div></> : button ? <><div className="properties-tabs"><button className="active">Geral</button><button onClick={() => notify("Design do botão selecionado")}>Design</button><button onClick={() => notify("Teste A/B do botão selecionado")}>Teste A/B</button></div><div className="property-section"><label>Conteúdo do Botão</label><input value={selectedBlock.content} onChange={(event) => onTextChange(event.target.value)} /></div><div className="property-section"><label>Largura do Botão</label><input type="range" min="20" max="100" value={selectedBlock.width ?? 100} onChange={(event) => onBlockChange({ width: Number(event.target.value) })} /></div><div className="property-section"><label>Alinhamento</label><div className="alignment-buttons"><button className={selectedBlock.align === "left" ? "active" : ""} onClick={() => onBlockChange({ align: "left" })}>≡</button><button className={!selectedBlock.align || selectedBlock.align === "center" ? "active" : ""} onClick={() => onBlockChange({ align: "center" })}>≡</button><button className={selectedBlock.align === "right" ? "active" : ""} onClick={() => onBlockChange({ align: "right" })}>≡</button></div></div><div className="property-section"><label>Tipo de Navegação</label><select value={selectedBlock.navigation ?? "next"} onChange={(event) => onBlockChange({ navigation: event.target.value })}><option value="next">Navegar para próxima etapa</option><option value="url">Abrir um link</option><option value="anchor">Ir para um componente</option></select></div><div className="toggle-row"><div><label>Fixar no Rodapé</label><small>Manter o botão fixo no rodapé</small></div><button className={selectedBlock.sticky ? "toggle on" : "toggle"} onClick={() => onBlockChange({ sticky: !selectedBlock.sticky })} /></div><div className="toggle-row"><div><label>Botão de Âncora</label><small>Fazer o botão navegar para um componente específico da página</small></div><button className={selectedBlock.anchor ? "toggle on" : "toggle"} onClick={() => onBlockChange({ anchor: !selectedBlock.anchor })} /></div><div className="property-section"><label>Delay para aparecer</label><small>Tempo em segundos para o botão aparecer</small><input value={selectedBlock.delay ?? ""} placeholder="Exemplo: 5 segundos" onChange={(event) => onBlockChange({ delay: event.target.value })} /></div><div className="property-section"><label>Script ao Clicar</label><small>Código JavaScript executado quando o botão é clicado</small><textarea value={selectedBlock.script ?? "console.log('Botão clicado');"} onChange={(event) => onBlockChange({ script: event.target.value })} /></div></> : selectedBlock?.item === "Alerta" ? <><button className="properties-tab active">Configurações</button><div className="property-section"><label>Título</label><input value={selectedBlock.content} onChange={(event) => onTextChange(event.target.value)} /></div><div className="property-section"><label>Alinhamento Horizontal</label><div className="alignment-buttons"><button>≡</button><button className="active">≡</button><button>≡</button></div><label>Largura Personalizada</label><input type="range" defaultValue="100" /><label>Ícones</label><div className="alert-icon-grid"><button>△<span>Atenção</span></button><button className="active">ⓘ<span>Informação</span></button><button>☑<span>Sucesso</span></button><button>ⓘ<span>Erro</span></button><button>?</button><button>×<span>Fechar</span></button></div><button className="outline-btn">Remover ícone</button></div></> : <><p>Selecione ou arraste um componente para começar a editar.</p><div className="property-section"><label>Título do passo</label><small>Configurações gerais do step</small><input defaultValue="Passo 1" /></div><button className="upload-box" onClick={() => notify("Upload de imagem em breve")}>↥<br /><span>Clique para fazer upload<br />ou arraste uma imagem aqui</span></button></>}{showImagePicker && <ImagePickerModal onCancel={() => setShowImagePicker(false)} onSelect={(url) => { onBlockChange({ imageUrl: url }); setShowImagePicker(false); }} />}</aside>;}
 function Analytics({ notify }: { notify: (message: string) => void }) { return <div className="analytics-page"><div className="analytics-filters"><button>◉　FE POR UM FIO　⌄</button><button>▣　01/11/2026 - 04/11/2026</button><button onClick={() => notify("Dados atualizados")}>⟳</button></div><div className="metric-grid">{[["◉", "Pageviews", "0", "Visitantes que acessaram seu funil"], ["♙", "Leads Adquiridos", "0", "Iniciaram alguma interação com o seu funil"], ["⌁", "% Interação", "0.0%", "Percentual de leads que interagiram"], ["✓", "Leads Qualificados", "0", "Completaram 50% do funil"], ["✓", "Fluxos Completos", "0", "Chegaram até a última etapa do funil"]].map((metric) => <div className="metric-card" key={metric[1]}><span>{metric[0]}　{metric[1]}</span><strong>{metric[2]}</strong><small>{metric[3]}</small></div>)}</div><div className="chart-card"><div className="empty-chart">Nenhum dado no período selecionado</div></div><div className="conversion-card"><h2>Análise de Conversão</h2><div className="inner-tabs"><button className="active">Funil</button><button>Eventos</button><button>Resumo</button></div></div></div>; }
 

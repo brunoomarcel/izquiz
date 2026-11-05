@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 import type { CSSProperties } from "react";
 import type { CanvasBlock } from "./types";
 import { BlockIcon } from "./BlockIcon";

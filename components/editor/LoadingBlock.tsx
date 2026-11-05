@@ -1,0 +1,52 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import type { CanvasBlock } from "./types";
+
+const defaultStates = [{ id: 1, label: "Carregando..." }, { id: 2, label: "Processando..." }, { id: 3, label: "Finalizando..." }];
+
+function getStates(block: CanvasBlock) { return block.loadingStates?.length ? block.loadingStates : defaultStates; }
+
+function EditorIcon({ type }: { type: "duplicate" | "delete" | "chevron" }) {
+  if (type === "duplicate") return <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="1.5" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>;
+  if (type === "delete") return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5" /></svg>;
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 9 5 5 5-5" /></svg>;
+}
+
+function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return <label className="loading-color-field"><span>{label}</span><div><input type="color" value={value} onChange={(event) => onChange(event.target.value)} /><input value={value} onChange={(event) => onChange(event.target.value)} /></div></label>;
+}
+
+export function LoadingBlock({ block, isFunnelScreen = false, onCloseMultiStep }: { block: CanvasBlock; isFunnelScreen?: boolean; onCloseMultiStep?: () => void }) {
+  const multiStep = block.loadingDisplay === "multistep";
+  const states = getStates(block);
+  const [activeState, setActiveState] = useState(0);
+  const [percentage, setPercentage] = useState(block.loadingInitialPercentage ?? 0);
+  useEffect(() => {
+    if (multiStep) {
+      const interval = window.setInterval(() => setActiveState((current) => current + 1 >= states.length ? block.loadingLoop ? 0 : current : current + 1), Math.max(1, block.loadingStateDuration ?? 6) * 1000);
+      return () => window.clearInterval(interval);
+    }
+    const target = 100;
+    const interval = window.setInterval(() => setPercentage((current) => current >= target ? target : Math.min(target, current + 1)), Math.max(10, ((block.loadingDuration ?? 60) * 10)));
+    return () => window.clearInterval(interval);
+  }, [block.loadingDuration, block.loadingLoop, block.loadingStateDuration, multiStep, states.length]);
+  const align = block.loadingAlign ?? "center";
+  const style = { width: `${block.loadingWidth ?? 100}%`, marginLeft: align === "right" || align === "center" ? "auto" : "0", marginRight: align === "left" || align === "center" ? "auto" : "0", "--loading-color": block.loadingColor ?? "#2f6df3", "--loading-track": block.loadingTrackColor ?? "#e3e7ec", "--loading-text": block.loadingTextColor ?? "#173255" } as React.CSSProperties;
+  const multiStepContent = <div className="canvas-loading loading-multistep" style={style}>{states.map((state, index) => <div key={state.id} className={index <= activeState ? "is-active" : ""}><i>{index < activeState ? "✓" : index === activeState ? "✓" : ""}</i><span>{state.label}</span></div>)}</div>;
+  if (multiStep) return isFunnelScreen ? <div className="funnel-screen-loading-overlay" aria-live="polite">{onCloseMultiStep && <button className="loading-multistep-close" type="button" onClick={onCloseMultiStep} aria-label="Fechar carregamento Multi-Step">×<span>Fechar</span></button>}{multiStepContent}</div> : multiStepContent;
+  return <div className="canvas-loading loading-standard" style={style}>{block.loadingShowTitle !== false && <div className="loading-heading"><strong>{block.loadingTitle ?? "Carregando..."}</strong>{block.loadingShowProgress !== false && <span>{percentage}%</span>}</div>}{block.loadingShowProgress !== false && <div className="loading-progress"><i style={{ width: `${percentage}%` }} /></div>}<p>{block.loadingDescription ?? "Por favor, aguarde enquanto carregamos os dados."}</p></div>;
+}
+
+export function LoadingProperties({ block, onBlockChange }: { block: CanvasBlock; onBlockChange: (patch: Partial<CanvasBlock>) => void }) {
+  const [activeTab, setActiveTab] = useState<"config" | "design">("config");
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+  const states = getStates(block);
+  const updateStates = (next: typeof states) => onBlockChange({ loadingStates: next });
+  const addState = () => { const id = Math.max(0, ...states.map((state) => state.id)) + 1; updateStates([...states, { id, label: `Estado ${id}` }]); setExpandedIndex(states.length); };
+  const duplicateState = (index: number) => { const state = states[index]; if (!state) return; const id = Math.max(0, ...states.map((item) => item.id)) + 1; updateStates([...states.slice(0, index + 1), { ...state, id, label: `${state.label} (cópia)` }, ...states.slice(index + 1)]); };
+  const removeState = (index: number) => { if (states.length <= 1) return; updateStates(states.filter((_, itemIndex) => itemIndex !== index)); setExpandedIndex(null); };
+  const updateState = (index: number, label: string) => updateStates(states.map((state, itemIndex) => itemIndex === index ? { ...state, label } : state));
+  const multiStep = block.loadingDisplay === "multistep";
+  return <div className="loading-properties"><div className="properties-tabs"><button type="button" className={activeTab === "config" ? "active" : ""} onClick={() => setActiveTab("config")}>Configurações</button><button type="button" className={activeTab === "design" ? "active" : ""} onClick={() => setActiveTab("design")}>Design</button></div>{activeTab === "config" ? <><div className="property-section"><label>Estilo de exibição</label><select value={block.loadingDisplay ?? "standard"} onChange={(event) => onBlockChange({ loadingDisplay: event.target.value as CanvasBlock["loadingDisplay"] })}><option value="standard">Padrão</option><option value="multistep">Multi-Step</option></select></div>{multiStep ? <><div className="property-section"><label>Estados de Loading</label><div className="loading-states-list">{states.map((state, index) => <div className="loading-state-editor" key={state.id}><div><strong>{state.label}</strong><button type="button" onClick={() => duplicateState(index)}><EditorIcon type="duplicate" /></button><button type="button" onClick={() => removeState(index)}><EditorIcon type="delete" /></button><button type="button" onClick={() => setExpandedIndex(expandedIndex === index ? null : index)}><EditorIcon type="chevron" /></button></div>{expandedIndex === index && <label>Texto do estado<input value={state.label} onChange={(event) => updateState(index, event.target.value)} /></label>}</div>)}<button type="button" className="add-option-btn" onClick={addState}>＋ Adicionar Novo Estado</button></div></div><div className="toggle-row"><label>Loop Infinito</label><button type="button" className={block.loadingLoop ? "toggle on" : "toggle"} onClick={() => onBlockChange({ loadingLoop: !block.loadingLoop })} /></div><div className="property-section"><label>Duração por Estado <output>{block.loadingStateDuration ?? 60}s</output></label><input type="range" min="1" max="60" value={block.loadingStateDuration ?? 60} onChange={(event) => onBlockChange({ loadingStateDuration: Number(event.target.value) })} /></div></> : <><div className="property-section"><label>Título</label><input value={block.loadingTitle ?? "Carregando..."} onChange={(event) => onBlockChange({ loadingTitle: event.target.value })} /></div><div className="property-section"><label>Descrição</label><input value={block.loadingDescription ?? "Por favor, aguarde enquanto carregamos os dados."} onChange={(event) => onBlockChange({ loadingDescription: event.target.value })} /></div><div className="property-section"><label>Largura Personalizada <output>{block.loadingWidth ?? 100}%</output></label><input type="range" min="25" max="100" value={block.loadingWidth ?? 100} onChange={(event) => onBlockChange({ loadingWidth: Number(event.target.value) })} /></div><div className="property-section"><label>Alinhamento Horizontal</label><div className="alignment-buttons"><button type="button" className={block.loadingAlign === "left" ? "active" : ""} onClick={() => onBlockChange({ loadingAlign: "left" })}>≡</button><button type="button" className={!block.loadingAlign || block.loadingAlign === "center" ? "active" : ""} onClick={() => onBlockChange({ loadingAlign: "center" })}>≡</button><button type="button" className={block.loadingAlign === "right" ? "active" : ""} onClick={() => onBlockChange({ loadingAlign: "right" })}>≡</button></div></div><div className="property-section"><label>Duração <output>{block.loadingDuration ?? 60}s</output></label><input type="range" min="1" max="60" value={block.loadingDuration ?? 60} onChange={(event) => onBlockChange({ loadingDuration: Number(event.target.value) })} /></div><div className="toggle-row"><label>Mostrar Título</label><button type="button" className={block.loadingShowTitle !== false ? "toggle on" : "toggle"} onClick={() => onBlockChange({ loadingShowTitle: block.loadingShowTitle === false })} /></div><div className="toggle-row"><label>Mostrar Progresso</label><button type="button" className={block.loadingShowProgress !== false ? "toggle on" : "toggle"} onClick={() => onBlockChange({ loadingShowProgress: block.loadingShowProgress === false })} /></div><div className="property-section"><label>Porcentagem Inicial <output>{block.loadingInitialPercentage ?? 0}%</output></label><input type="range" min="0" max="100" value={block.loadingInitialPercentage ?? 0} onChange={(event) => onBlockChange({ loadingInitialPercentage: Number(event.target.value) })} /></div></>}<div className="property-section"><label>Navegação</label><select value={block.loadingNavigation ?? "next"} onChange={(event) => onBlockChange({ loadingNavigation: event.target.value as CanvasBlock["loadingNavigation"] })}><option value="next">Navegar para próxima etapa</option><option value="step">Navegar para etapa específica</option><option value="url">Redirecionar para URL</option><option value="none">Sem navegação</option></select></div></> : <div className="loading-design"><ColorField label="Cor principal" value={block.loadingColor ?? "#2f6df3"} onChange={(value) => onBlockChange({ loadingColor: value })} /><ColorField label="Cor da barra" value={block.loadingTrackColor ?? "#e3e7ec"} onChange={(value) => onBlockChange({ loadingTrackColor: value })} /><ColorField label="Cor do texto" value={block.loadingTextColor ?? "#173255"} onChange={(value) => onBlockChange({ loadingTextColor: value })} /></div>}</div>;
+}
