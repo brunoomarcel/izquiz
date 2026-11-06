@@ -9,7 +9,7 @@ export function TextareaBlock({ block, onNotify }: { block: CanvasBlock; onNotif
   const marginLeft = align === "right" || align === "center" ? "auto" : "0";
   const marginRight = align === "left" || align === "center" ? "auto" : "0";
 
-  return <form className="canvas-textarea-block" style={{ width: `${width}%`, marginLeft, marginRight }} onSubmit={(event) => { event.preventDefault(); onNotify(block.textareaNavigation === "url" ? "Navegação por link configurada" : "Resposta enviada"); }} onClick={(event) => event.stopPropagation()}>
+  return <form className="canvas-textarea-block" style={{ width: `${width}%`, marginLeft, marginRight }} onSubmit={(event) => { event.preventDefault(); onNotify(block.textareaNavigation === "url" ? "Navegação por link configurada" : "Resposta enviada"); }}>
     <label>{block.textareaLabel ?? "Observações"}<textarea required={block.textareaRequired} placeholder={block.textareaPlaceholder ?? "Digite sua mensagem"} /></label>
     <span className="textarea-help">{block.textareaHelpText ?? "Opcional"}</span>
     <button type="submit" style={{ width: `${buttonWidth}%`, marginLeft, marginRight }}>{block.textareaButtonText ?? "Enviar"}</button>

@@ -52,7 +52,7 @@
 - [x] Loading — padrão com barra/progresso e Multi-Step com estados, duração, loop, navegação e sobreposição fullscreen escura/desfocada.
 - [x] Timer e Delay — configuração e prévia no editor; Delay com tempo em segundos, aviso e card informativo.
 - [x] Notificação e Script — largura alinhada aos demais elementos, conteúdo, tipo/trigger, posições Padrão/Topo/Centro/Rodapé, duração com barra regressiva e remoção ao finalizar, Design e prévia segura.
-- [x] Elementos de Dados — Nível com componente próprio, título, subtítulo, largura, alinhamento, porcentagem, indicador, legendas e Design; demais dados com valor, unidade e barra.
+- [x] Elementos de Dados — Nível, Peso e Altura com componentes próprios, configuração, régua/indicador e Design; Tendência e Evolutivo com componentes próprios, gráficos alimentados por dados e configuração; demais dados com valor, unidade e barra.
 - [x] Gamificação e Mapa Corporal — pontuação, meta e prévia visual.
 - [x] Planos — título, cards de planos e prévia de seleção.
 

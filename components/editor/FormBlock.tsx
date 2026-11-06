@@ -29,7 +29,7 @@ export function FormBlock({ block, onNotify }: { block: CanvasBlock; onNotify: (
     onNotify(block.formSubmitAction === "message" ? "Formulário enviado" : block.formSubmitAction === "url" ? "Navegação após envio configurada" : "Próxima etapa configurada");
   }
 
-  return <form className="canvas-form" style={{ width: `${width}%`, marginLeft: align === "right" || align === "center" ? "auto" : "0", marginRight: align === "left" || align === "center" ? "auto" : "0" }} onSubmit={submit} onClick={(event) => event.stopPropagation()}>
+  return <form className="canvas-form" style={{ width: `${width}%`, marginLeft: align === "right" || align === "center" ? "auto" : "0", marginRight: align === "left" || align === "center" ? "auto" : "0" }} onSubmit={submit}>
     <strong>{block.formTitle ?? "Formulário de Contato"}</strong>
     {fields.map((field) => <label key={field.id}>{field.label}{field.required && <em>*</em>}<input type={field.type} placeholder={field.placeholder} required={field.required} /></label>)}
     <button type="submit" style={{ width: `${buttonWidth}%`, marginLeft: align === "right" || align === "center" ? "auto" : "0", marginRight: align === "left" || align === "center" ? "auto" : "0" }}>{block.formButtonText ?? "Enviar"}</button>

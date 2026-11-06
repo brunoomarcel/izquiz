@@ -58,7 +58,7 @@ export function OptionsBlock({ block, onNotify }: { block: CanvasBlock; onNotify
   } as React.CSSProperties;
 
   return <div className={className} style={{ flexDirection: direction === "horizontal" ? "row" : "column" }}>
-    {options.map((option) => <button key={option.id} style={optionStyle} className={`canvas-option ${selectedIds.includes(option.id) ? "is-selected" : ""}`} onClick={(event) => { event.stopPropagation(); setSelectedIds((current) => block.allowMultiple ? current.includes(option.id) ? current.filter((id) => id !== option.id) : [...current, option.id] : [option.id]); onNotify(option.navigation === "url" ? "Navegação por link configurada" : "Opção selecionada"); }}>
+    {options.map((option) => <button key={option.id} style={optionStyle} className={`canvas-option ${selectedIds.includes(option.id) ? "is-selected" : ""}`} onClick={() => { setSelectedIds((current) => block.allowMultiple ? current.includes(option.id) ? current.filter((id) => id !== option.id) : [...current, option.id] : [option.id]); onNotify(option.navigation === "url" ? "Navegação por link configurada" : "Opção selecionada"); }}>
       {displayMode === "image-text" && option.imageUrl && <img src={getTransparentImageUrl(option.imageUrl)} alt="" />}
       <span>{option.label}</span>
       {displayMode === "text-image" && option.imageUrl && <img src={getTransparentImageUrl(option.imageUrl)} alt="" />}
