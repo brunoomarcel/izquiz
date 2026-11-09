@@ -22,6 +22,26 @@ function SavedAlertIcon({ type, size = 17 }: { type?: CanvasBlock["alertIcon"]; 
   return <svg className="saved-alert-icon" style={{ width: size, height: size }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{icon}</svg>;
 }
 
+function hasSavedBlockContent(block: CanvasBlock) {
+  const text = (value: unknown) => typeof value === "string" && value.trim().length > 0;
+  const hasTextContent = text(block.content) && block.content !== block.item;
+  if (block.item === "Texto" || block.item === "Botão" || block.item === "Alerta") return hasTextContent;
+  if (block.item === "Imagem") return Boolean(block.imageUrl);
+  if (block.item === "Vídeo") return text(block.videoEmbed);
+  if (block.item === "Áudio") return Boolean(block.audioUrl);
+  if (block.item === "Carrossel") return Boolean(block.carouselItems?.some((item) => item.imageUrl || text(item.text)));
+  if (block.item === "Antes/Depois") return Boolean(block.beforeImageUrl || block.afterImageUrl);
+  if (block.item === "Depoimentos") return Boolean(block.testimonialItems?.length);
+  if (block.item === "FAQ") return Boolean(block.faqItems?.some((item) => text(item.question) || text(item.answer)));
+  if (block.item === "Opções") return Boolean(block.options?.some((option) => text(option.label)));
+  if (block.item === "Argumentos") return Boolean(block.arguments?.some((argument) => text(argument.title) || text(argument.description) || argument.imageUrl));
+  if (block.item === "Formulário") return Boolean(block.formTitle || block.formFields?.length);
+  if (block.item === "Área de Texto") return Boolean(block.textareaLabel || block.textareaPlaceholder || block.textareaHelpText || block.textareaButtonText);
+  if (block.item === "Espaço") return typeof block.spacerHeight === "number" && block.spacerHeight > 0;
+  if (block.item === "Notificação") return Boolean(block.notificationTitle || block.notificationMessage);
+  return hasTextContent || Boolean(block.levelTitle || block.levelSubtitle || block.weightValue || block.heightValue || block.dataValue || block.trendValue || block.gamificationAmount || block.plansTitle);
+}
+
 function SavedBlockPreview({ block, onNext, onNavigateToStep }: { block: CanvasBlock; onNext: (source?: "answer" | "form" | "button") => void; onNavigateToStep?: (target: string) => void }) {
   if (block.item === "Imagem") return block.imageUrl ? <img className="saved-quiz-image" src={block.imageUrl} alt={block.content || "Imagem do funil"} style={{ width: `${block.imageWidth ?? 100}%`, height: block.imageHeight ? `${block.imageHeight}px` : "auto", objectFit: "cover" }} /> : null;
   if (block.item === "Texto") return <div className="saved-quiz-text">{block.content}</div>;
@@ -113,7 +133,7 @@ export default function PublicQuiz() {
         title,
         blocks: step_blocks.sort(byPosition).map((row) => {
           const payload = (row.content ?? {}) as Partial<CanvasBlock>;
-          return { ...payload, id: row.position + 1, item: row.block_type, content: payload.content ?? row.block_type };
+          return { ...payload, id: row.position + 1, item: row.block_type, content: payload.content ?? "" };
         }),
       })));
     }
@@ -180,7 +200,7 @@ export default function PublicQuiz() {
   };
 
   if (loadingSavedQuiz) return <main className="public-quiz"><div className="public-quiz-card"><div className="public-brand"><span>iz</span> izquiz</div><p>Carregando seu quiz...</p></div></main>;
-  if (savedSteps.length > 0 && savedStep) return <main className="public-quiz"><div className="public-progress"><span style={{ width: `${finished ? 100 : (step / savedSteps.length) * 100}%` }} /></div><div className="public-quiz-card"><div className="public-brand"><span>iz</span> izquiz</div>{finished ? <div className="public-result"><div className="result-spark">✦</div><h1>Seu próximo passo<br /><em>começa agora.</em></h1><p>Preparamos uma recomendação especial para você.</p></div> : <><div className="public-kicker">{savedStep.title}</div><div className="saved-quiz-blocks">{savedStep.blocks.map((block) => <SavedBlockPreview block={block} onNext={advanceSavedQuiz} onNavigateToStep={(target) => { const targetStep = Number(target); if (Number.isInteger(targetStep) && targetStep >= 1 && targetStep <= savedSteps.length) setStep(targetStep); }} key={block.id} />)}</div></>}</div><footer>izquiz <span>feito para converter</span></footer></main>;
+  if (savedSteps.length > 0 && savedStep) return <main className="public-quiz"><div className="public-progress"><span style={{ width: `${finished ? 100 : (step / savedSteps.length) * 100}%` }} /></div><div className="public-quiz-card"><div className="public-brand"><span>iz</span> izquiz</div>{finished ? <div className="public-result"><div className="result-spark">✦</div><h1>Seu próximo passo<br /><em>começa agora.</em></h1><p>Preparamos uma recomendação especial para você.</p></div> : <div className="saved-quiz-blocks">{savedStep.blocks.filter(hasSavedBlockContent).map((block) => <SavedBlockPreview block={block} onNext={advanceSavedQuiz} onNavigateToStep={(target) => { const targetStep = Number(target); if (Number.isInteger(targetStep) && targetStep >= 1 && targetStep <= savedSteps.length) setStep(targetStep); }} key={block.id} />)}</div>}</div><footer>izquiz <span>feito para converter</span></footer></main>;
   if (routeSlug !== "fe-por-um-fio") return <main className="public-quiz"><div className="public-quiz-card"><div className="public-brand"><span>iz</span> izquiz</div><h1>Não foi possível carregar este funil</h1><p>Verifique se o link está correto e se o funil foi salvo.</p></div></main>;
   return <main className="public-quiz"><div className="public-progress"><span style={{ width: `${finished ? 100 : step * 33.33}%` }} /></div><div className="public-quiz-card"><div className="public-brand"><span>iz</span> izquiz</div>{finished ? <div className="public-result"><div className="result-spark">✦</div><h1>Seu próximo passo<br /><em>começa agora.</em></h1><p>Preparamos uma recomendação especial para você. Confira seu e-mail para receber os próximos passos.</p><button onClick={() => window.location.reload()}>Refazer quiz</button></div> : <><div className="public-kicker">FE POR UM FIO</div><h1>{step === 1 ? <>Como se reconectar com Deus e conquistar a<br /><em>vida abundante</em> que você precisa?</> : step === 2 ? <>O que você mais<br /><em>busca hoje?</em></> : <>Receba seu<br /><em>resultado.</em></>}</h1><p className="public-description">{step === 1 ? "Mesmo que você já tenha tentado orar, ler a Bíblia... e nada tenha mudado." : step === 2 ? "Escolha a alternativa que mais representa o seu momento." : "Deixe seu melhor e-mail para receber uma recomendação personalizada."}</p>{step === 1 && <div className="public-visual"><span>Você não<br />chegou aqui<br />por acaso</span></div>}{step === 2 && <div className="answer-grid">{answers.map((answer) => <button className={selected === answer ? "answer selected" : "answer"} key={answer} onClick={() => setSelected(answer)}>{answer}<span>→</span></button>)}</div>}{step === 3 && <input className="public-email" type="email" placeholder="Seu melhor e-mail" value={email} onChange={(event) => setEmail(event.target.value)} />}{step !== 2 && <button className="public-cta" onClick={next}>{step === 1 ? "COMEÇAR" : "RECEBER RESULTADO"}<span>→</span></button>}{step === 2 && <button className="public-cta" onClick={next} disabled={!selected}>CONTINUAR <span>→</span></button>}<small className="public-note">Leva menos de 2 minutos　•　100% gratuito</small></>}</div><footer>izquiz <span>feito para converter</span></footer></main>;
 }
