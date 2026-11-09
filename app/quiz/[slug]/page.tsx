@@ -12,6 +12,7 @@ type PublicStep = { id?: string; title: string; blocks: CanvasBlock[] };
 type PublicFunnelRow = { id: string; pixelId?: string | null; conversionMode?: string | null; conversionStepId?: string | null; funnel_steps: Array<{ id: string; title: string; position: number; step_blocks: Array<{ position: number; block_type: string; content: unknown }> }> };
 type MetaFbq = ((command: string, ...args: unknown[]) => void) & { callMethod?: (...args: unknown[]) => void; queue?: unknown[]; loaded?: boolean; version?: string; push?: MetaFbq };
 
+
 declare global {
   interface Window { fbq?: MetaFbq; _fbq?: MetaFbq; __izquizMetaPixelId?: string; }
 }
