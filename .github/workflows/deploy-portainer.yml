@@ -35,8 +35,11 @@ jobs:
             NEXT_PUBLIC_APP_DOMAIN=${{ vars.NEXT_PUBLIC_APP_DOMAIN || 'izquiz.stuffshub.com' }}
 
       - name: Solicitar redeploy no Portainer
-        if: ${{ secrets.PORTAINER_WEBHOOK_URL != '' }}
         env:
           PORTAINER_WEBHOOK_URL: ${{ secrets.PORTAINER_WEBHOOK_URL }}
         run: |
+          if [ -z "$PORTAINER_WEBHOOK_URL" ]; then
+            echo "Webhook do Portainer ainda não configurado; imagem publicada sem redeploy automático."
+            exit 0
+          fi
           curl --fail --silent --show-error --retry 3 -X POST "$PORTAINER_WEBHOOK_URL"
