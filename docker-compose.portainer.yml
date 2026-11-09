@@ -1,15 +1,27 @@
 services:
   izquiz:
     image: ghcr.io/brunoomarcel/izquiz:latest
-    ports:
-      - "3010:3000"
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
       NEXT_PUBLIC_APP_DOMAIN: ${NEXT_PUBLIC_APP_DOMAIN:-izquiz.stuffshub.com}
+    networks:
+      - vpsnet
     deploy:
       replicas: 1
       restart_policy:
         condition: on-failure
+      labels:
+        traefik.enable: "true"
+        traefik.docker.network: vpsnet
+        traefik.http.routers.izquiz-app.entrypoints: websecure
+        traefik.http.routers.izquiz-app.rule: "Host(`izquiz.stuffshub.com`)"
+        traefik.http.routers.izquiz-app.tls: "true"
+        traefik.http.routers.izquiz-app.tls.certresolver: letsencryptresolver
+        traefik.http.services.izquiz-app.loadbalancer.server.port: "3000"
+
+networks:
+  vpsnet:
+    external: true
