@@ -50,6 +50,16 @@ function SavedLoading({ block }: { block: CanvasBlock }) {
   return <div className="saved-quiz-loading"><div className="loading-heading"><strong>{block.loadingShowTitle !== false ? block.loadingTitle ?? "Carregando..." : ""}</strong>{block.loadingShowProgress !== false && <span>{Math.round(percentage)}%</span>}</div>{block.loadingShowProgress !== false && <div className="loading-progress"><i style={{ width: `${percentage}%`, background: block.loadingColor ?? "#2f6df3" }} /></div>}<p>{block.loadingDescription ?? "Por favor, aguarde enquanto carregamos os dados."}</p></div>;
 }
 
+function SavedTimer({ block }: { block: CanvasBlock }) {
+  const initialSeconds = Math.max(0, block.timerSeconds ?? 30);
+  const [remaining, setRemaining] = useState(initialSeconds);
+  useEffect(() => {
+    const interval = window.setInterval(() => setRemaining((current) => Math.max(0, current - 1)), 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+  return <div className="saved-quiz-data"><strong>{block.timerLabel ?? "Tempo restante"}</strong><b style={{ color: block.timerColor ?? "#2f6df3", fontSize: 28 }}>{remaining}s</b></div>;
+}
+
 function SavedBlockPreview({ block, onNext, onNavigateToStep }: { block: CanvasBlock; onNext: (source?: "answer" | "form" | "button") => void; onNavigateToStep?: (target: string) => void }) {
   if (block.item === "Imagem") return block.imageUrl ? <img className="saved-quiz-image" src={block.imageUrl} alt={savedText(block.content, block.item, "Imagem do funil")} style={{ width: `${block.imageWidth ?? 100}%`, height: block.imageHeight ? `${block.imageHeight}px` : "auto", objectFit: "cover" }} /> : <EmptySavedBlock media />;
   if (block.item === "Texto") return <div className="saved-quiz-text">{savedText(block.content, block.item, "Texto de exemplo")}</div>;
@@ -66,7 +76,7 @@ function SavedBlockPreview({ block, onNext, onNavigateToStep }: { block: CanvasB
   if (block.item === "Idade") return <div className="saved-quiz-age"><h2>{block.dataLabel ?? "Qual a sua idade?"}</h2><p>Isso nos ajuda a criar seu plano personalizado</p><div className="age-value">{block.dataValue ?? 18}<small> anos</small></div><input type="range" min={block.dataMin ?? 18} max={block.dataMax ?? 80} defaultValue={block.dataValue ?? 18} /><small>Deslize para ajustar</small></div>;
   if (block.item === "Tendência") return <div className="saved-quiz-trend"><div><small>{block.trendTitle ?? "Tendência"}</small><strong>{block.trendValue ?? "88%"}</strong><span>{block.trendPositive === false ? "↘" : "↗"} {block.trendPercentage ?? 88}%</span><em>{block.trendPeriod ?? "Última semana"}</em></div><svg viewBox="0 0 240 80" preserveAspectRatio="none"><path d="M0 45 C50 18 80 15 120 48 S190 70 240 20 L240 80 L0 80 Z" /><path d="M0 45 C50 18 80 15 120 48 S190 70 240 20" /></svg></div>;
   if (block.item === "Loading") return <SavedLoading block={block} />;
-  if (block.item === "Timer") return <div className="saved-quiz-data"><strong>{block.timerLabel ?? "Tempo restante"}</strong><b style={{ color: block.timerColor ?? "#2f6df3", fontSize: 28 }}>{block.timerSeconds ?? 30}s</b></div>;
+  if (block.item === "Timer") return <SavedTimer key={`${block.id}-${block.timerSeconds ?? 30}`} block={block} />;
   if (block.item === "Delay") return <div className="canvas-delay"><strong>Delay</strong><span>Pausa de {Math.floor((block.delaySeconds ?? 60) / 60)}:{String((block.delaySeconds ?? 60) % 60).padStart(2, "0")} antes dos próximos componentes</span></div>;
   if (block.item === "Script") return <div className="saved-quiz-data"><strong>{block.scriptLabel ?? "Script personalizado"}</strong><small>Executa quando: {block.scriptTrigger ?? "load"}</small></div>;
   if (block.item === "Evolutivo") return <div className="saved-quiz-evolution"><h2>{block.evolutionTitle ?? "Gráfico Comparativo"}</h2><p>{block.evolutionDescription ?? "Comparação Você vs. Concorrente"}</p><svg viewBox="0 0 300 150" preserveAspectRatio="none"><path d="M0 120 C90 100 190 65 300 20 L300 150 L0 150Z" /><path d="M0 140 C100 125 200 100 300 70" /></svg><div>{(block.evolutionLabels ?? "Jan,Fev,Mar").split(",").map((label) => <span key={label}>{label.trim()}</span>)}</div></div>;
