@@ -120,6 +120,8 @@ export type CanvasBlock = {
   alertAlign?: "left" | "center" | "right";
   alertWidth?: number;
   alertThemeColor?: string;
+  alertBorderColor?: string;
+  alertBorderEnabled?: boolean;
   alertIconColor?: string;
   alertIconSize?: number;
   alertIconPosition?: "left" | "right";
