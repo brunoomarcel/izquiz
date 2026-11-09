@@ -18,7 +18,9 @@ export type ArgumentItem = {
   title: string;
   description: string;
   imageUrl?: string;
-  navigation?: string;
+  navigation?: "none" | "next" | "url" | "anchor" | "step";
+  targetStep?: string;
+  redirectUrl?: string;
 };
 
 export type FaqItem = {
