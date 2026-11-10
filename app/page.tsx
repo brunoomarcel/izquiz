@@ -45,6 +45,12 @@ import { readEditorDocumentCache, writeEditorDocumentCache } from "@/lib/editor/
 type Screen = "Dashboard" | "Analytics";
 type EditorView = "Editar" | "Integrar" | "Fluxo" | "Resultados" | "Compartilhar" | "Configurações";
 type Step = EditorStep;
+type EditorSession = { inEditor: boolean; screen: Screen; editorView: EditorView; funnelId: string | null; sidebarCollapsed: boolean; published: boolean };
+
+function readEditorSession(): EditorSession | null {
+  if (typeof window === "undefined") return null;
+  try { return JSON.parse(window.localStorage.getItem("izquiz:editor-session") ?? "null") as EditorSession | null; } catch { return null; }
+}
 
 const steps: Step[] = [
   { title: "Passo 1", kind: "INTRO", active: true },
@@ -88,16 +94,21 @@ function Icon({ children }: { children: React.ReactNode }) { return <span classN
 
 export default function Home() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+  const [savedSession] = useState(readEditorSession);
   const [authLoading, setAuthLoading] = useState(Boolean(supabase));
   const [user, setUser] = useState<User | null>(null);
-  const [screen, setScreen] = useState<Screen>("Dashboard");
-  const [editorView, setEditorView] = useState<EditorView>("Editar");
-  const [inEditor, setInEditor] = useState(false);
+  const [screen, setScreen] = useState<Screen>(savedSession?.screen ?? "Dashboard");
+  const [editorView, setEditorView] = useState<EditorView>(savedSession?.editorView ?? "Editar");
+  const [inEditor, setInEditor] = useState(savedSession?.inEditor ?? false);
   const [toast, setToast] = useState("");
-  const [published, setPublished] = useState(false);
+  const [published, setPublished] = useState(savedSession?.published ?? false);
   const [editorSteps, setEditorSteps] = useState<Step[]>(blankSteps);
-  const [activeFunnelId, setActiveFunnelId] = useState<string | null>(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [activeFunnelId, setActiveFunnelId] = useState<string | null>(savedSession?.funnelId ?? null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(savedSession?.sidebarCollapsed ?? false);
+
+  useEffect(() => {
+    window.localStorage.setItem("izquiz:editor-session", JSON.stringify({ inEditor, screen, editorView, funnelId: activeFunnelId, sidebarCollapsed, published } satisfies EditorSession));
+  }, [activeFunnelId, editorView, inEditor, published, screen, sidebarCollapsed]);
 
   const notify = useCallback((message: string) => { setToast(message); window.setTimeout(() => setToast(""), 2200); }, []);
   const openEditor = (mode: "blank" | "sample" = "blank", funnelId: string | null = null) => { setActiveFunnelId(funnelId); setEditorSteps(mode === "sample" ? steps : blankSteps); setScreen("Dashboard"); setEditorView("Editar"); setSidebarCollapsed(true); setInEditor(true); if (mode === "sample") notify("Funil aberto"); else if (!funnelId) notify("Novo funil criado com template inicial"); };
@@ -504,7 +515,12 @@ function EditorActionIcon({ type }: { type: "edit" | "move" | "duplicate" | "del
 
 function EditorCanvas({ supabase, funnelId, notify, stepsData, onBack }: { supabase: NonNullable<ReturnType<typeof createSupabaseBrowserClient>> | null; funnelId: string | null; notify: (message: string) => void; stepsData: Step[]; onBack: () => void }) {
   const [cachedDocument] = useState(() => funnelId ? readEditorDocumentCache(funnelId) : null);
-  const [selected, setSelected] = useState(0);
+  const selectionKey = funnelId ? `izquiz:editor-selection:${funnelId}` : "izquiz:editor-selection:local";
+  const [savedSelection] = useState(() => {
+    if (typeof window === "undefined") return null;
+    try { return JSON.parse(window.localStorage.getItem(selectionKey) ?? "null") as { stepIndex?: number; blockId?: number | null } | null; } catch { return null; }
+  });
+  const [selected, setSelected] = useState(savedSelection?.stepIndex ?? 0);
   const [editableSteps, setEditableSteps] = useState<Step[]>(cachedDocument?.steps ?? (funnelId ? [] : stepsData));
   const [stepToDelete, setStepToDelete] = useState<{ index: number; title: string } | null>(null);
   const [deletingStep, setDeletingStep] = useState(false);
@@ -514,7 +530,7 @@ function EditorCanvas({ supabase, funnelId, notify, stepsData, onBack }: { supab
   const [dragOverCanvas, setDragOverCanvas] = useState(false);
   const [blocksByStep, setBlocksByStep] = useState<Record<string, CanvasBlock[]>>(cachedDocument?.blocksByStep ?? {});
   const persistQueue = useRef<Promise<void>>(Promise.resolve());
-  const [selectedBlockId, setSelectedBlockId] = useState<number | null>(null);
+  const [selectedBlockId, setSelectedBlockId] = useState<number | null>(savedSelection?.blockId ?? null);
   const [editingBlockId, setEditingBlockId] = useState<number | null>(null);
   const [movingBlockId, setMovingBlockId] = useState<number | null>(null);
   const [dropIndicator, setDropIndicator] = useState<{ targetId: number; position: "before" | "after" } | null>(null);
@@ -557,6 +573,9 @@ function EditorCanvas({ supabase, funnelId, notify, stepsData, onBack }: { supab
     if (!funnelId || editableSteps.length === 0) return;
     writeEditorDocumentCache(funnelId, { steps: editableSteps, blocksByStep });
   }, [funnelId, editableSteps, blocksByStep]);
+  useEffect(() => {
+    window.localStorage.setItem(selectionKey, JSON.stringify({ stepIndex: selected, blockId: selectedBlockId }));
+  }, [selected, selectedBlockId, selectionKey]);
   const activeStepId = editableSteps[selected]?.id ?? null;
   const blocks = useMemo(() => activeStepId ? blocksByStep[activeStepId] ?? [] : [], [activeStepId, blocksByStep]);
   const setBlocks = useCallback((update: SetStateAction<CanvasBlock[]>) => {
