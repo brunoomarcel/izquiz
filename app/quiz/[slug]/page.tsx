@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { AudioBlock } from "@/components/editor/AudioBlock";
 import { readEditorDocumentCache } from "@/lib/editor/cache";
 import { PUBLIC_DOMAIN } from "@/lib/public-url";
 import type { CanvasBlock } from "@/components/editor/types";
@@ -33,7 +34,7 @@ function EmptySavedBlock({ media = false }: { media?: boolean }) {
 const defaultFaqItems = [{ id: 1, question: "O que é o FAQ?", answer: "Uma lista de perguntas frequentes e respostas sobre um determinado tópico." }, { id: 2, question: "Como edito as perguntas?", answer: "Edite as perguntas no painel de propriedades." }, { id: 3, question: "Posso adicionar mais itens?", answer: "Sim. Use o botão Adicionar item no painel de propriedades." }];
 const defaultOptions = [{ id: 1, label: "Opção 1" }, { id: 2, label: "Opção 2" }];
 const defaultCarouselItems: Array<{ id: number; text: string; imageUrl?: string }> = [{ id: 1, text: "Texto do slide 1" }, { id: 2, text: "Texto do slide 2" }];
-const defaultTestimonials: Array<{ id: number; name: string; username: string; comment: string; rating: number; imageUrl?: string }> = [{ id: 1, name: "Nome do Cliente 1", username: "usuario1", comment: "Este é um depoimento de exemplo. Substitua com um depoimento real do seu cliente.", rating: 5 }];
+const defaultTestimonials: Array<{ id: number; name: string; username: string; comment: string; rating: number; imageUrl?: string }> = [{ id: 1, name: "Nome do Cliente 1", username: "usuario1", comment: "Este é um depoimento de exemplo. Substitua com um depoimento real do seu cliente.", rating: 5 }, { id: 2, name: "Nome do Cliente 2", username: "usuario2", comment: "Compartilhe aqui uma experiência positiva de quem já conhece o seu trabalho.", rating: 5 }];
 const defaultPlans = [{ id: 1, title: "Plano Básico", price: "R$ 80,00", description: "R$ 2,67 por dia", features: ["Feature 1", "Feature 2"] }, { id: 2, title: "Plano Avançado", price: "R$ 150,00", description: "R$ 5,00 por dia", features: ["Feature A", "Feature B", "Feature C"] }];
 
 function SavedLoading({ block }: { block: CanvasBlock }) {
@@ -46,8 +47,8 @@ function SavedLoading({ block }: { block: CanvasBlock }) {
     const interval = window.setInterval(() => setPercentage((current) => Math.min(100, current + 100 / (duration * 10))), 100);
     return () => window.clearInterval(interval);
   }, [block.loadingDuration, multiStep]);
-  if (multiStep) return <div className="saved-quiz-loading saved-quiz-loading-multistep">{states.map((state, index) => <div key={state.id}><i>{index === 0 ? "✓" : ""}</i><span>{state.label}</span></div>)}</div>;
-  return <div className="saved-quiz-loading"><div className="loading-heading"><strong>{block.loadingShowTitle !== false ? block.loadingTitle ?? "Carregando..." : ""}</strong>{block.loadingShowProgress !== false && <span>{Math.round(percentage)}%</span>}</div>{block.loadingShowProgress !== false && <div className="loading-progress"><i style={{ width: `${percentage}%`, background: block.loadingColor ?? "#2f6df3" }} /></div>}<p>{block.loadingDescription ?? "Por favor, aguarde enquanto carregamos os dados."}</p></div>;
+  if (multiStep) return <div className="canvas-loading loading-multistep saved-quiz-loading saved-quiz-loading-multistep">{states.map((state, index) => <div key={state.id}><i>{index === 0 ? "✓" : ""}</i><span>{state.label}</span></div>)}</div>;
+  return <div className="canvas-loading loading-standard saved-quiz-loading"><div className="loading-heading"><strong>{block.loadingShowTitle !== false ? block.loadingTitle ?? "Carregando..." : ""}</strong>{block.loadingShowProgress !== false && <span>{Math.round(percentage)}%</span>}</div>{block.loadingShowProgress !== false && <div className="loading-progress"><i style={{ width: `${percentage}%`, background: block.loadingColor ?? "#2f6df3" }} /></div>}<p>{block.loadingDescription ?? "Por favor, aguarde enquanto carregamos os dados."}</p></div>;
 }
 
 function SavedTimer({ block }: { block: CanvasBlock }) {
@@ -57,14 +58,90 @@ function SavedTimer({ block }: { block: CanvasBlock }) {
     const interval = window.setInterval(() => setRemaining((current) => Math.max(0, current - 1)), 1000);
     return () => window.clearInterval(interval);
   }, []);
-  return <div className="saved-quiz-data"><strong>{block.timerLabel ?? "Tempo restante"}</strong><b style={{ color: block.timerColor ?? "#2f6df3", fontSize: 28 }}>{remaining}s</b></div>;
+  return <div className="canvas-simple timer-element" style={{ color: block.timerColor ?? "#2f6df3" }}><strong>{block.timerLabel ?? "Tempo restante"}</strong><b>{remaining}s</b></div>;
+}
+
+function publicButtonStyle(block: CanvasBlock): React.CSSProperties {
+  const color = block.buttonColor ?? "#2f6df6";
+  return { width: `${block.width ?? 100}%`, marginLeft: block.align === "right" || block.align === "center" ? "auto" : "0", marginRight: block.align === "left" || block.align === "center" ? "auto" : "0", background: block.buttonStyle === "outline" ? "transparent" : color, color: block.buttonTextColor ?? "#fff", border: block.buttonStyle === "outline" ? `2px solid ${color}` : block.buttonStyle === "relief" ? `1px solid ${color}` : "0", borderRadius: block.buttonStyle === "rounded" ? 28 : 12, boxShadow: block.buttonStyle === "relief" ? `0 6px 0 #2058d4, 0 8px 12px #172b4b33` : block.buttonShadow === "none" ? "none" : block.buttonShadow === "medium" ? "0 6px 14px #172b4b33" : "0 3px 7px #172b4b22" };
+}
+
+function SavedCarousel({ block }: { block: CanvasBlock }) {
+  const items = block.carouselItems?.length ? block.carouselItems : defaultCarouselItems;
+  const [activeIndex, setActiveIndex] = useState(0);
+  const pointerStartX = useRef<number | null>(null);
+  const item = items[activeIndex] ?? items[0];
+  const style = {
+    "--carousel-background": block.carouselBackground ?? "#ffffff",
+    "--carousel-border": block.carouselBorder ?? "#cad9ff",
+    "--carousel-arrow": block.carouselArrowColor ?? "#2c2c3c",
+    "--carousel-arrow-background": block.carouselArrowBackground ?? "#ffffff",
+    "--carousel-blur": block.carouselBlurColor ?? "#e5e7eb",
+  } as React.CSSProperties;
+  const previous = () => setActiveIndex((current) => (current - 1 + items.length) % items.length);
+  const next = () => setActiveIndex((current) => (current + 1) % items.length);
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => { pointerStartX.current = event.clientX; event.currentTarget.setPointerCapture(event.pointerId); };
+  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => { if (pointerStartX.current === null) return; const distance = event.clientX - pointerStartX.current; pointerStartX.current = null; if (Math.abs(distance) < 35) return; if (distance < 0) next(); else previous(); };
+
+  useEffect(() => {
+    if (!block.carouselAutoplay || items.length < 2) return;
+    const timer = window.setInterval(() => setActiveIndex((current) => (current + 1) % items.length), Math.max(1, block.carouselInterval ?? 5) * 1000);
+    return () => window.clearInterval(timer);
+  }, [block.carouselAutoplay, block.carouselInterval, items.length]);
+
+  return <div className={`canvas-carousel carousel-${block.carouselStyle ?? "modern"}`} style={style} onPointerDown={handlePointerDown} onPointerUp={handlePointerUp}>
+    <p className="carousel-description">{block.carouselDescription ?? "Descrição do Carrossel"}</p>
+    <div className="carousel-viewport">
+      <div className="carousel-slide" key={item.id}>
+        <div className={`carousel-image ${block.carouselImageBlur ? "has-blur" : ""}`}>
+          {item.imageUrl ? <img src={item.imageUrl} alt={item.text} /> : <span>{activeIndex + 1}</span>}
+        </div>
+        <div className="carousel-caption">{item.text}</div>
+      </div>
+    </div>
+    {block.carouselShowArrows !== false && items.length > 1 && <div className={`carousel-arrows arrows-${block.carouselArrowPosition ?? "left"}`}><button type="button" aria-label="Slide anterior" onClick={previous}>‹</button><button type="button" aria-label="Próximo slide" onClick={next}>›</button></div>}
+  </div>;
+}
+
+function SavedTestimonials({ block }: { block: CanvasBlock }) {
+  const items = block.testimonialItems?.length ? block.testimonialItems : defaultTestimonials;
+  const [activeIndex, setActiveIndex] = useState(0);
+  const pointerStartX = useRef<number | null>(null);
+  const currentIndex = Math.min(activeIndex, Math.max(items.length - 1, 0));
+  const item = items[currentIndex] ?? items[0];
+  const style = {
+    "--testimonial-name": block.testimonialNameColor ?? "#000000",
+    "--testimonial-username": block.testimonialUsernameColor ?? "#333333",
+    "--testimonial-comment": block.testimonialCommentColor ?? "#666666",
+    "--testimonial-stars": block.testimonialStarsColor ?? "#ffd500",
+    "--testimonial-background": block.testimonialBackground ?? "#ffffff",
+    "--testimonial-arrow": block.testimonialArrowColor ?? "#2c2c3c",
+    "--testimonial-arrow-background": block.testimonialArrowBackground ?? "#ffffff",
+  } as React.CSSProperties;
+  const previous = () => setActiveIndex((current) => (Math.min(current, items.length - 1) - 1 + items.length) % items.length);
+  const next = () => setActiveIndex((current) => (Math.min(current, items.length - 1) + 1) % items.length);
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => { pointerStartX.current = event.clientX; event.currentTarget.setPointerCapture(event.pointerId); };
+  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => { if (pointerStartX.current === null) return; const distance = event.clientX - pointerStartX.current; pointerStartX.current = null; if (Math.abs(distance) < 35) return; if (distance < 0) next(); else previous(); };
+
+  useEffect(() => {
+    if (!block.testimonialAutoplay || items.length < 2) return;
+    const timer = window.setInterval(() => setActiveIndex((current) => (current + 1) % items.length), Math.max(1, block.testimonialDelay ?? 5) * 1000);
+    return () => window.clearInterval(timer);
+  }, [block.testimonialAutoplay, block.testimonialDelay, items.length]);
+
+  if (!item) return null;
+  return <div className={`canvas-testimonials testimonial-${block.testimonialStyle ?? "modern"}`} style={style} onPointerDown={handlePointerDown} onPointerUp={handlePointerUp}>
+    <div className="testimonial-card" key={item.id}><div className="testimonial-top"><span className="testimonial-quote">“</span><span className="testimonial-stars">{"★".repeat(Math.max(0, Math.min(5, item.rating)))}</span></div><p>{item.comment}</p><div className="testimonial-author">{item.imageUrl ? <img src={item.imageUrl} alt="" /> : <span className="testimonial-avatar">{item.name.slice(0, 2)}</span>}<div><strong>{item.name}</strong><small>{item.username}</small></div></div></div>
+    {block.testimonialShowArrows !== false && items.length > 1 && <div className={`testimonial-arrows arrows-${block.testimonialArrowPosition ?? "left"}`}><button type="button" aria-label="Depoimento anterior" onClick={previous}>‹</button><button type="button" aria-label="Próximo depoimento" onClick={next}>›</button></div>}
+    {block.testimonialShowPagination !== false && items.length > 1 && <div className="testimonial-pagination">{items.map((entry, index) => <button type="button" key={entry.id} aria-label={`Ir para depoimento ${index + 1}`} className={index === currentIndex ? "active" : ""} onClick={() => setActiveIndex(index)} />)}</div>}
+  </div>;
 }
 
 function SavedBlockPreview({ block, onNext, onNavigateToStep }: { block: CanvasBlock; onNext: (source?: "answer" | "form" | "button") => void; onNavigateToStep?: (target: string) => void }) {
   if (block.item === "Imagem") return block.imageUrl ? <img className="saved-quiz-image" src={block.imageUrl} alt={savedText(block.content, block.item, "Imagem do funil")} style={{ width: `${block.imageWidth ?? 100}%`, height: block.imageHeight ? `${block.imageHeight}px` : "auto", objectFit: "cover" }} /> : <EmptySavedBlock media />;
   if (block.item === "Texto") return <div className="saved-quiz-text">{savedText(block.content, block.item, "Texto de exemplo")}</div>;
-  if (block.item === "Botão") return <button className="public-cta" type="button" onClick={() => onNext("button")}>{savedText(block.content, block.item, "Próximo")}<span>→</span></button>;
-  if (block.item === "Alerta") { const align = block.alertAlign ?? "center"; return <div className={`saved-quiz-alert alert-public-align-${align}`} style={{ width: `${block.alertWidth ?? 100}%`, background: block.alertThemeColor ?? "#cad9ff", border: block.alertBorderEnabled === false ? "none" : `1px solid ${block.alertBorderColor ?? "#266dff"}`, color: block.alertIconColor ?? "#266dff", flexDirection: block.alertIconPosition === "right" ? "row-reverse" : "row" }}><SavedAlertIcon type={block.alertIcon ?? "info"} size={block.alertIconSize ?? 24} /><strong style={{ color: "#111827", fontSize: "12px" }}>{savedText(block.content, block.item, "Atenção!")}</strong></div>; }
+  if (block.item === "Botão") return <button className="canvas-button" style={publicButtonStyle(block)} type="button" onClick={() => onNext("button")}>{savedText(block.content, block.item, "Próximo")}</button>;
+  if (block.item === "Alerta") { const align = block.alertAlign ?? "center"; return <div className={`canvas-alert saved-quiz-alert alert-public-align-${align}`} style={{ width: `${block.alertWidth ?? 100}%`, background: block.alertThemeColor ?? "#cad9ff", border: block.alertBorderEnabled === false ? "none" : `1px solid ${block.alertBorderColor ?? "#266dff"}`, color: block.alertIconColor ?? "#266dff", flexDirection: block.alertIconPosition === "right" ? "row-reverse" : "row", "--alert-icon-size": `${block.alertIconSize ?? 24}px` } as React.CSSProperties}><span className="alert-block-content"><SavedAlertIcon type={block.alertIcon ?? "info"} size={block.alertIconSize ?? 24} /><strong style={{ color: "#111827", fontSize: "12px" }}>{savedText(block.content, block.item, "Atenção!")}</strong></span></div>; }
   if (block.item === "Formulário") return <div className="saved-quiz-form"><h2>{block.formTitle ?? "Formulário de Contato"}</h2>{(block.formFields ?? [{ id: 1, label: "Nome", type: "text", placeholder: "Digite seu nome" }, { id: 2, label: "Email", type: "email", placeholder: "Digite seu email" }]).map((field) => <label key={field.id}>{field.label}<input type={field.type} placeholder={field.placeholder} /></label>)}<button className="public-cta" type="button" onClick={() => onNext("form")}>{block.formButtonText ?? "Enviar"}</button></div>;
   if (block.item === "Área de Texto") return <div className="saved-quiz-form"><strong>{block.textareaLabel ?? "Observações"}</strong><textarea placeholder={block.textareaPlaceholder ?? "Digite sua mensagem"} /><small>{block.textareaHelpText ?? "Opcional"}</small><button className="public-cta" type="button" onClick={() => onNext("form")}>{block.textareaButtonText ?? "Enviar"}</button></div>;
   if (block.item === "FAQ") return <div className="saved-quiz-faq"><h2>{block.faqTitle ?? "Perguntas frequentes"}</h2>{(block.faqItems?.length ? block.faqItems : defaultFaqItems).map((item) => <details key={item.id}><summary>{item.question}</summary><p>{item.answer}</p></details>)}</div>;
@@ -84,10 +161,10 @@ function SavedBlockPreview({ block, onNext, onNavigateToStep }: { block: CanvasB
   if (block.item === "Gamificação") return <div className="saved-quiz-gamification"><h2>{block.gamificationText ?? "Parabéns! Você acumulou:"}</h2><div><strong>{block.gamificationCompany ?? "Deskfunnel"}</strong><small>{block.gamificationCompanyDescription ?? "Quizzes interativos"}</small><b>{block.gamificationAmount ?? "R$ 50.00"}</b></div><button className="public-cta" type="button" onClick={() => onNext("button")}>{block.gamificationButtonText ?? "Resgatar Prêmio"}</button></div>;
   if (block.item === "Planos") return <div className="saved-quiz-plans"><h2>{block.plansTitle ?? "MAIS POPULARES"}</h2>{(block.planItems?.length ? block.planItems : defaultPlans).map((plan) => <button type="button" key={plan.id} onClick={() => onNext("button")}><strong>{plan.title}</strong><b>{plan.price}</b><small>{plan.description}</small></button>)}</div>;
   if (block.item === "Vídeo") { const source = block.videoEmbed?.match(/src\s*=\s*["']([^"']+)["']/i)?.[1]; return source ? <iframe className="saved-quiz-video" src={source} title="Vídeo do funil" allowFullScreen /> : <EmptySavedBlock media />; }
-  if (block.item === "Áudio") return <div className="saved-quiz-audio"><strong>{block.audioTitle ?? "Mensagem de Áudio"}</strong>{block.audioUrl ? <audio controls autoPlay={block.audioAutoplay} loop={block.audioLoop} src={block.audioUrl} /> : <EmptySavedBlock media />}</div>;
-  if (block.item === "Carrossel") return <div className="saved-quiz-carousel">{(block.carouselItems?.length ? block.carouselItems : defaultCarouselItems).map((item) => <figure key={item.id}>{item.imageUrl ? <img src={item.imageUrl} alt={item.text} /> : <EmptySavedBlock media />}<figcaption>{item.text}</figcaption></figure>)}</div>;
+  if (block.item === "Áudio") return <AudioBlock block={block} />;
+  if (block.item === "Carrossel") return <SavedCarousel block={block} />;
   if (block.item === "Antes/Depois") return <div className="saved-quiz-before-after">{block.beforeImageUrl && <img src={block.beforeImageUrl} alt={block.beforeLabel ?? "Antes"} />}{block.afterImageUrl && <img src={block.afterImageUrl} alt={block.afterLabel ?? "Depois"} />}{!block.beforeImageUrl && !block.afterImageUrl && <EmptySavedBlock media />}</div>;
-  if (block.item === "Depoimentos") return <div className="saved-quiz-testimonials">{(block.testimonialItems?.length ? block.testimonialItems : defaultTestimonials).map((item) => <article key={item.id}>{item.imageUrl && <img src={item.imageUrl} alt={item.name} />}<strong>{item.name}</strong><small>{item.username}</small><p>{item.comment}</p><span>{"★".repeat(item.rating)}</span></article>)}</div>;
+  if (block.item === "Depoimentos") return <SavedTestimonials block={block} />;
   if (block.item === "Espaço") return <div style={{ height: `${block.spacerHeight ?? 40}px` }} aria-hidden="true" />;
   if (block.item === "Notificação") return <div className="saved-quiz-alert">{block.notificationTitle ?? "Atenção"}<br /><small>{block.notificationMessage ?? "Sua notificação aparecerá aqui."}</small></div>;
   return <div className="saved-quiz-block">{savedText(block.content, block.item) || <EmptySavedBlock />}</div>;
