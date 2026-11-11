@@ -29,3 +29,6 @@
 .funnel-open p b{color:#1b2b43}
 .funnel-more{display:grid;place-items:center;width:34px;height:30px;border:1px solid #dce4ef;border-radius:6px;background:#fff;color:#526783;font-weight:700;line-height:1;appearance:none}
 .funnel-more:hover{border-color:#a9c3f7;background:#f5f8ff;color:var(--blue)}
+
+/* Keep the editor palette iconography at a consistent, intentional scale. */
+.component-grid button .block-icon{display:block;width:28px;height:28px;flex:none;margin:0 auto 6px}
