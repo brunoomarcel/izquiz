@@ -73,7 +73,7 @@ function blockProperties(args: Record<string, unknown>, legacyDefault = false) {
   return { type, properties };
 }
 
-function tools() {
+export function getMcpToolDefinitions() {
   const securitySchemes = [{ type: "oauth2", scopes: ["openid", "email", "profile"] }];
   const stepSchema = {
     type: "object",
@@ -113,9 +113,9 @@ function tools() {
     { name: "izquiz_list_blocks", description: "Lista os blocos visuais salvos em uma etapa. Retorna cada bloco como {id, stepId, position, type, properties}; properties contém a configuração JSON usada pelo editor e pelo quiz publicado.", securitySchemes, inputSchema: { type: "object", required: ["stepId"], properties: { stepId: { type: "string" } } } },
     {
       name: "izquiz_create_block",
-      description: "Cria um bloco no formato JSON {stepId, block:{type, properties, position?}}. properties guarda os campos do componente, por exemplo Texto {content:'...'}, Imagem {imageUrl:'https://...'} ou Botão {content:'Próximo',navigation:'next'}. Sem position, adiciona ao final. Aceita também os argumentos antigos item/content/settings.",
+      description: "Cria um componente visual real no canvas e o persiste em step_blocks. Recebe {stepId, type, properties, position?}; properties é o JSON do componente usado pelo editor. Sem position, adiciona ao final. Exemplo: {stepId:'uuid', type:'FAQ', properties:{faqTitle:'Perguntas frequentes', faqItems:[...]}}.",
       securitySchemes,
-      inputSchema: { type: "object", required: ["stepId"], properties: { stepId: { type: "string" }, block: blockSchema, item: { type: "string", enum: BLOCK_TYPES }, type: { type: "string", enum: BLOCK_TYPES }, blockType: { type: "string", enum: BLOCK_TYPES }, content: { type: "string" }, settings: { type: "object" } } },
+      inputSchema: { type: "object", required: ["stepId", "type", "properties"], properties: { stepId: { type: "string" }, type: { type: "string", enum: BLOCK_TYPES }, properties: { type: "object", description: "Configuração JSON completa do componente no formato do editor." }, position: { type: "integer", minimum: 0, description: "Posição começando em zero; omitida, o componente é anexado ao final." } }, additionalProperties: false },
     },
     {
       name: "izquiz_create_step_block",
@@ -457,7 +457,7 @@ async function handle(request: Request) {
   if (body.method === "ping") return result(body.id, {});
   const context = await getContext(request);
   if (context instanceof Response) return context;
-  if (body.method === "tools/list") return result(body.id, { tools: tools() });
+  if (body.method === "tools/list") return result(body.id, { tools: getMcpToolDefinitions() });
   if (body.method === "tools/call") {
     const params = body.params ?? {};
     try { return result(body.id, await callTool(String(params.name), (params.arguments ?? {}) as Record<string, unknown>, context)); } catch (toolError) { return result(body.id, { content: [{ type: "text", text: toolError instanceof Error ? toolError.message : "Erro ao executar ferramenta" }], isError: true }); }
@@ -466,6 +466,6 @@ async function handle(request: Request) {
 }
 
 export async function OPTIONS() { return new Response(null, { status: 204, headers: headers() }); }
-export async function GET() { return response({ name: "izquiz-mcp", version: MCP_SERVER_VERSION, endpoint: "/mcp", message: "Use POST para o transporte MCP Streamable HTTP.", tools: tools().map((tool) => tool.name) }, 200); }
+export async function GET() { return response({ name: "izquiz-mcp", version: MCP_SERVER_VERSION, endpoint: "/mcp", message: "Use POST para o transporte MCP Streamable HTTP.", tools: getMcpToolDefinitions().map((tool) => tool.name) }, 200); }
 export async function POST(request: Request) { try { return await handle(request); } catch { return response({ error: "Requisição MCP inválida" }, 400); } }
 export async function DELETE() { return response({ message: "Sessões stateless não precisam ser encerradas." }, 200); }

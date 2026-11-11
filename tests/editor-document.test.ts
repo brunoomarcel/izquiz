@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { buildClonedBlockRows, groupBlocksByStep, legacyTextBlocksToRows, serializeCanvasBlocks } from "../lib/editor/document.ts";
+import { getMcpToolDefinitions } from "../app/mcp/route.ts";
 
 test("loads canonical rows with their stable database IDs and order", () => {
   const document = groupBlocksByStep(["step-a", "step-empty"], [
@@ -30,6 +31,18 @@ test("prepares cloned blocks with new step IDs, original order, and full propert
     { step_id: "new-step", position: 0, block_type: "Imagem", content: { content: "", imageUrl: "https://example.test/image.png", width: 75 } },
     { step_id: "new-step", position: 1, block_type: "Botão", content: { content: "Continuar", style: "primary", navigation: { type: "next" } } },
   ]);
+});
+
+test("MCP exposes canonical create, update, delete, and reorder block operations", () => {
+  const definitions = getMcpToolDefinitions() as Array<{ name: string; inputSchema?: { required?: string[]; properties?: Record<string, unknown> } }>;
+  const byName = new Map(definitions.map((definition) => [definition.name, definition]));
+  const create = byName.get("izquiz_create_block");
+  assert.ok(create);
+  assert.deepEqual(create.inputSchema?.required, ["stepId", "type", "properties"]);
+  assert.ok(create.inputSchema?.properties?.position);
+  assert.ok(byName.has("izquiz_update_block"));
+  assert.ok(byName.has("izquiz_delete_block"));
+  assert.ok(byName.has("izquiz_reorder_step_blocks"));
 });
 
 test("converts legacy text blocks in order while keeping their content and properties", () => {
