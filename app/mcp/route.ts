@@ -103,7 +103,15 @@ function tools() {
       securitySchemes,
       inputSchema: { type: "object", required: ["blockId"], properties: { blockId: { type: "string" }, patch: { type: "object", properties: { type: { type: "string", enum: BLOCK_TYPES }, properties: { type: "object" } } }, item: { type: "string", enum: BLOCK_TYPES }, content: { type: "string" }, settings: { type: "object" } } },
     },
+    {
+      name: "izquiz_update_step_block",
+      description: "Alias de izquiz_update_block. Atualiza as propriedades JSON do bloco identificado por blockId.",
+      securitySchemes,
+      inputSchema: { type: "object", required: ["blockId"], properties: { blockId: { type: "string" }, patch: { type: "object", properties: { type: { type: "string", enum: BLOCK_TYPES }, properties: { type: "object" } } }, properties: { type: "object" }, content: { type: "string" }, item: { type: "string", enum: BLOCK_TYPES } } },
+    },
     { name: "izquiz_delete_block", description: "Remove um componente de uma etapa.", securitySchemes, inputSchema: { type: "object", required: ["blockId"], properties: { blockId: { type: "string" } } } },
+    { name: "izquiz_delete_step_block", description: "Alias de izquiz_delete_block. Remove o bloco identificado por blockId.", securitySchemes, inputSchema: { type: "object", required: ["blockId"], properties: { blockId: { type: "string" } } } },
+    { name: "izquiz_reorder_step_blocks", description: "Reordena todos os blocos visuais da etapa na ordem indicada. blockIds deve conter cada bloco da etapa exatamente uma vez.", securitySchemes, inputSchema: { type: "object", required: ["stepId", "blockIds"], properties: { stepId: { type: "string" }, blockIds: { type: "array", items: { type: "string" } } } } },
     { name: "izquiz_reorder_steps", description: "Reordena etapas usando uma lista de IDs na ordem desejada.", securitySchemes, inputSchema: { type: "object", required: ["funnelId", "stepIds"], properties: { funnelId: { type: "string" }, stepIds: { type: "array", items: { type: "string" } } } } },
     { name: "izquiz_list_metrics", description: "Retorna pessoas, eventos e taxa de conclusão de um funil.", securitySchemes, inputSchema: { type: "object", required: ["funnelId"], properties: { funnelId: { type: "string" } } } },
   ];
@@ -259,8 +267,10 @@ async function callTool(name: string, args: Record<string, unknown>, context: Mc
     if (queryError) throw queryError;
     return toolText({ block: { id: data.id, stepId: data.step_id, position: data.position, type: data.block_type, properties: data.content } });
   }
-  if (name === "izquiz_update_block") {
-    const { data: existing, error: blockError } = await context.supabase.from("step_blocks").select("id, step_id, block_type, content").eq("id", String(args.blockId)).maybeSingle();
+  if (name === "izquiz_update_block" || name === "izquiz_update_step_block") {
+    const blockId = String(args.blockId ?? args.stepBlockId ?? "").trim();
+    if (!blockId) throw new Error("Informe blockId");
+    const { data: existing, error: blockError } = await context.supabase.from("step_blocks").select("id, step_id, block_type, content").eq("id", blockId).maybeSingle();
     if (blockError) throw blockError;
     if (!existing) throw new Error("Componente não encontrado ou não autorizado");
     await getAuthorizedStep(context, existing.step_id);
@@ -274,14 +284,37 @@ async function callTool(name: string, args: Record<string, unknown>, context: Mc
     if (queryError) throw queryError;
     return toolText({ block: { id: data.id, stepId: data.step_id, position: data.position, type: data.block_type, properties: data.content } });
   }
-  if (name === "izquiz_delete_block") {
-    const { data: existing, error: blockError } = await context.supabase.from("step_blocks").select("id, step_id").eq("id", String(args.blockId)).maybeSingle();
+  if (name === "izquiz_delete_block" || name === "izquiz_delete_step_block") {
+    const blockId = String(args.blockId ?? args.stepBlockId ?? "").trim();
+    if (!blockId) throw new Error("Informe blockId");
+    const { data: existing, error: blockError } = await context.supabase.from("step_blocks").select("id, step_id").eq("id", blockId).maybeSingle();
     if (blockError) throw blockError;
     if (!existing) throw new Error("Componente não encontrado ou não autorizado");
     await getAuthorizedStep(context, existing.step_id);
     const { error: deleteError } = await context.supabase.from("step_blocks").delete().eq("id", existing.id);
     if (deleteError) throw deleteError;
     return toolText({ deleted: true, blockId: existing.id });
+  }
+  if (name === "izquiz_reorder_step_blocks") {
+    const step = await getAuthorizedStep(context, String(args.stepId ?? ""));
+    const blockIds = Array.isArray(args.blockIds) ? args.blockIds.map(String) : [];
+    const { data: blocks, error: blocksError } = await context.supabase.from("step_blocks").select("id, position").eq("step_id", step.id).order("position");
+    if (blocksError) throw blocksError;
+    const current = blocks ?? [];
+    if (blockIds.length !== current.length || new Set(blockIds).size !== current.length || blockIds.some((id) => !current.some((block) => block.id === id))) {
+      throw new Error("blockIds precisa conter todos os blocos desta etapa exatamente uma vez");
+    }
+    const highestPosition = current.reduce((max, block) => Math.max(max, Number(block.position) || 0), -1);
+    const temporaryBase = highestPosition + current.length + 100;
+    for (let index = 0; index < blockIds.length; index += 1) {
+      const { error: moveError } = await context.supabase.from("step_blocks").update({ position: temporaryBase + index }).eq("id", blockIds[index]);
+      if (moveError) throw moveError;
+    }
+    for (let index = 0; index < blockIds.length; index += 1) {
+      const { error: moveError } = await context.supabase.from("step_blocks").update({ position: index }).eq("id", blockIds[index]);
+      if (moveError) throw moveError;
+    }
+    return toolText({ stepId: step.id, blockIds, message: "Blocos reordenados" });
   }
   if (name === "izquiz_create_step") {
     const funnel = await getFunnel(context, String(args.funnelId));
