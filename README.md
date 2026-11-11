@@ -37,7 +37,7 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 ## MCP do Izquiz
 
-O endpoint MCP fica em `/mcp` e expõe ferramentas para administrar funis, etapas e métricas do workspace autorizado.
+O endpoint MCP fica em `/mcp` e expõe ferramentas para administrar funis, etapas, blocos visuais e métricas do workspace autorizado. `izquiz_build_funnel` recebe um JSON com `name` e `steps[]`; cada etapa pode incluir `stepType`, `settings` e `blocks[]`, e cada bloco usa `type` e `properties` no formato persistido pelo editor. A ferramenta cria o funil como rascunho e devolve os IDs de tudo que foi salvo. `izquiz_get_funnel` devolve as etapas com seus blocos normalizados (`type`, `properties`).
 
 Para habilitá-lo no servidor, configure no ambiente de produção:
 
