@@ -33,8 +33,43 @@ function result(id: JsonRpcRequest["id"], value: unknown) { return response({ js
 
 function toolText(value: Record<string, unknown>) { return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }], structuredContent: value }; }
 
+const BLOCK_TYPES = ["Texto", "Argumentos", "Alerta", "FAQ", "Imagem", "Vídeo", "Carrossel", "Depoimentos", "Antes/Depois", "Áudio", "Botão", "Opções", "Espaço", "Loading", "Timer", "Delay", "Notificação", "Script", "Formulário", "Área de Texto", "Nível", "Peso", "Altura", "IMC", "Idade", "Tendência", "Evolutivo", "Gamificação", "Mapa Corporal", "Planos"] as const;
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function normalizeBlockType(value: unknown) {
+  const requested = String(value ?? "").trim();
+  const normalized = requested.toLocaleLowerCase("pt-BR") === "text" || requested.toLocaleLowerCase("pt-BR") === "texto" ? "Texto" : requested;
+  if (!BLOCK_TYPES.includes(normalized as typeof BLOCK_TYPES[number])) throw new Error(`Tipo de bloco inválido: ${requested}. Tipos aceitos: ${BLOCK_TYPES.join(", ")}`);
+  return normalized;
+}
+
+function blockProperties(args: Record<string, unknown>, legacyDefault = false) {
+  const properties = { ...recordValue(args.settings), ...recordValue(args.properties) };
+  const text = typeof args.content === "string" ? args.content : typeof args.text === "string" ? args.text : undefined;
+  const type = normalizeBlockType(args.item ?? args.blockType ?? args.block_type ?? args.type ?? "Texto");
+  if (text !== undefined) properties.content = text;
+  if (legacyDefault && properties.content === undefined) {
+    if (type === "Texto") properties.content = "Texto de exemplo";
+    else if (type === "Alerta") properties.content = "Atenção!";
+    else if (type === "Botão") properties.content = "Próximo";
+  }
+  return { type, properties };
+}
+
 function tools() {
   const securitySchemes = [{ type: "oauth2", scopes: ["openid", "email", "profile"] }];
+  const blockSchema = {
+    type: "object",
+    required: ["type"],
+    properties: {
+      type: { type: "string", enum: BLOCK_TYPES },
+      properties: { type: "object", description: "Propriedades JSON do bloco, usando os nomes de campo do editor." },
+      position: { type: "integer", minimum: 0, description: "Posição começando em zero." },
+    },
+  };
   return [
     { name: "izquiz_list_funnels", description: "Lista os funis do workspace autorizado do Izquiz.", securitySchemes, inputSchema: { type: "object", properties: {} } },
     { name: "izquiz_get_funnel", description: "Lê um funil, suas etapas e blocos pelo ID ou slug.", securitySchemes, inputSchema: { type: "object", properties: { funnelId: { type: "string" }, slug: { type: "string" } } } },
@@ -43,10 +78,31 @@ function tools() {
     { name: "izquiz_list_steps", description: "Lista as etapas de um funil na ordem atual.", securitySchemes, inputSchema: { type: "object", required: ["funnelId"], properties: { funnelId: { type: "string" } } } },
     { name: "izquiz_create_step", description: "Adiciona uma etapa ao final do funil.", securitySchemes, inputSchema: { type: "object", required: ["funnelId", "title"], properties: { funnelId: { type: "string" }, title: { type: "string" }, stepType: { type: "string", enum: ["intro", "question", "break", "form", "landing", "result"] } } } },
     { name: "izquiz_update_step", description: "Atualiza título, tipo ou configurações de uma etapa.", securitySchemes, inputSchema: { type: "object", required: ["stepId"], properties: { stepId: { type: "string" }, title: { type: "string" }, stepType: { type: "string" }, settings: { type: "object" } } } },
-    { name: "izquiz_list_blocks", description: "Lista os componentes já salvos em uma etapa.", securitySchemes, inputSchema: { type: "object", required: ["stepId"], properties: { stepId: { type: "string" } } } },
-    { name: "izquiz_create_block", description: "Adiciona um componente visível ao canvas da etapa. Passe o nome do componente em item (por exemplo Texto, Imagem, Botão ou Opções), o texto em content e as demais configurações em settings.", securitySchemes, inputSchema: { type: "object", required: ["stepId", "item"], properties: { stepId: { type: "string" }, item: { type: "string" }, content: { type: "string" }, settings: { type: "object" } } } },
-    { name: "izquiz_create_step_block", description: "Cria um bloco visual diretamente em uma etapa. Informe stepId, conteúdo, tipo do bloco (padrão Texto) e, opcionalmente, position (índice começando em 0) para inserir na ordem desejada.", securitySchemes, inputSchema: { type: "object", required: ["stepId", "content"], properties: { stepId: { type: "string" }, step_id: { type: "string" }, blockType: { type: "string", description: "Tipo do bloco; use Texto para um bloco de texto." }, block_type: { type: "string" }, type: { type: "string" }, item: { type: "string" }, content: { type: "string" }, text: { type: "string" }, position: { type: "integer", minimum: 0, description: "Posição 0-based; omitida, adiciona ao final." }, settings: { type: "object" } } } },
-    { name: "izquiz_update_block", description: "Altera texto ou configurações de um componente salvo.", securitySchemes, inputSchema: { type: "object", required: ["blockId"], properties: { blockId: { type: "string" }, item: { type: "string" }, content: { type: "string" }, settings: { type: "object" } } } },
+    { name: "izquiz_list_blocks", description: "Lista os blocos visuais salvos em uma etapa. Retorna cada bloco como {id, stepId, position, type, properties}; properties contém a configuração JSON usada pelo editor e pelo quiz publicado.", securitySchemes, inputSchema: { type: "object", required: ["stepId"], properties: { stepId: { type: "string" } } } },
+    {
+      name: "izquiz_create_block",
+      description: "Cria um bloco no formato JSON {stepId, block:{type, properties, position?}}. properties guarda os campos do componente, por exemplo Texto {content:'...'}, Imagem {imageUrl:'https://...'} ou Botão {content:'Próximo',navigation:'next'}. Sem position, adiciona ao final. Aceita também os argumentos antigos item/content/settings.",
+      securitySchemes,
+      inputSchema: { type: "object", required: ["stepId"], properties: { stepId: { type: "string" }, block: blockSchema, item: { type: "string", enum: BLOCK_TYPES }, type: { type: "string", enum: BLOCK_TYPES }, blockType: { type: "string", enum: BLOCK_TYPES }, content: { type: "string" }, settings: { type: "object" } } },
+    },
+    {
+      name: "izquiz_create_step_block",
+      description: "Alias compatível com izquiz_create_block. Recebe block:{type,properties,position?} ou os argumentos antigos step_id/item/content/settings.",
+      securitySchemes,
+      inputSchema: { type: "object", required: ["stepId"], properties: { stepId: { type: "string" }, block: blockSchema, step_id: { type: "string" }, blockType: { type: "string", enum: BLOCK_TYPES }, block_type: { type: "string", enum: BLOCK_TYPES }, type: { type: "string", enum: BLOCK_TYPES }, item: { type: "string", enum: BLOCK_TYPES }, content: { type: "string" }, text: { type: "string" }, position: { type: "integer", minimum: 0 }, settings: { type: "object" } } },
+    },
+    {
+      name: "izquiz_create_blocks",
+      description: "Cria de 1 a 100 blocos numa etapa através de JSON, na ordem do array. Ideal para construir uma etapa completa de uma vez. Cada bloco é salvo no jsonb existente.",
+      securitySchemes,
+      inputSchema: { type: "object", required: ["stepId", "blocks"], properties: { stepId: { type: "string" }, blocks: { type: "array", minItems: 1, maxItems: 100, items: blockSchema } } },
+    },
+    {
+      name: "izquiz_update_block",
+      description: "Atualiza um bloco usando {blockId, patch:{type?,properties?}}. properties é mesclado com o JSON salvo. Aceita também item/content/settings antigos.",
+      securitySchemes,
+      inputSchema: { type: "object", required: ["blockId"], properties: { blockId: { type: "string" }, patch: { type: "object", properties: { type: { type: "string", enum: BLOCK_TYPES }, properties: { type: "object" } } }, item: { type: "string", enum: BLOCK_TYPES }, content: { type: "string" }, settings: { type: "object" } } },
+    },
     { name: "izquiz_delete_block", description: "Remove um componente de uma etapa.", securitySchemes, inputSchema: { type: "object", required: ["blockId"], properties: { blockId: { type: "string" } } } },
     { name: "izquiz_reorder_steps", description: "Reordena etapas usando uma lista de IDs na ordem desejada.", securitySchemes, inputSchema: { type: "object", required: ["funnelId", "stepIds"], properties: { funnelId: { type: "string" }, stepIds: { type: "array", items: { type: "string" } } } } },
     { name: "izquiz_list_metrics", description: "Retorna pessoas, eventos e taxa de conclusão de um funil.", securitySchemes, inputSchema: { type: "object", required: ["funnelId"], properties: { funnelId: { type: "string" } } } },
@@ -145,23 +201,35 @@ async function callTool(name: string, args: Record<string, unknown>, context: Mc
     const step = await getAuthorizedStep(context, String(args.stepId));
     const { data, error: queryError } = await context.supabase.from("step_blocks").select("id, step_id, position, block_type, content").eq("step_id", step.id).order("position");
     if (queryError) throw queryError;
-    return toolText({ blocks: data ?? [] });
+    return toolText({ stepId: step.id, blocks: (data ?? []).map((row) => ({ id: row.id, stepId: row.step_id, position: row.position, type: row.block_type, properties: row.content })) });
   }
-  if (name === "izquiz_create_block" || name === "izquiz_create_step_block") {
-    const isStepBlockAlias = name === "izquiz_create_step_block";
+  if (name === "izquiz_create_block" || name === "izquiz_create_step_block" || name === "izquiz_create_blocks") {
     const stepId = String(args.stepId ?? args.step_id ?? "").trim();
     if (!stepId) throw new Error("Informe stepId");
     const step = await getAuthorizedStep(context, stepId);
-    const requestedType = String(args.item ?? args.blockType ?? args.block_type ?? args.type ?? (isStepBlockAlias ? "Texto" : "")).trim();
-    if (!requestedType) throw new Error("Informe o tipo do componente em item");
-    const item = ["text", "texto"].includes(requestedType.toLocaleLowerCase("pt-BR")) ? "Texto" : requestedType;
-    const settings = args.settings && typeof args.settings === "object" && !Array.isArray(args.settings) ? args.settings as Record<string, unknown> : {};
-    const defaultContent = item === "Texto" ? "Texto de exemplo" : item === "Alerta" ? "Atenção!" : item;
-    const content = typeof args.content === "string" ? args.content : typeof args.text === "string" ? args.text : defaultContent;
+    if (name === "izquiz_create_blocks") {
+      if (!Array.isArray(args.blocks) || args.blocks.length < 1 || args.blocks.length > 100) throw new Error("Informe de 1 a 100 blocos no array blocks");
+      const entries = args.blocks.map((entry) => {
+        const value = recordValue(entry);
+        const { type, properties } = blockProperties({ type: value.type, properties: value.properties });
+        return { step_id: step.id, block_type: type, content: properties };
+      });
+      const { data: last, error: lastError } = await context.supabase.from("step_blocks").select("position").eq("step_id", step.id).order("position", { ascending: false }).limit(1).maybeSingle();
+      if (lastError) throw lastError;
+      const startPosition = (last?.position ?? -1) + 1;
+      const rows = entries.map((entry, index) => ({ ...entry, position: startPosition + index }));
+      const { data, error: insertError } = await context.supabase.from("step_blocks").insert(rows).select("id, step_id, position, block_type, content");
+      if (insertError) throw insertError;
+      return toolText({ stepId: step.id, created: (data ?? []).map((row) => ({ id: row.id, stepId: row.step_id, position: row.position, type: row.block_type, properties: row.content })) });
+    }
+    const inputBlock = recordValue(args.block);
+    const mergedArgs = { ...args, ...inputBlock, properties: inputBlock.properties ?? args.properties };
+    const { type: item, properties: payload } = blockProperties(mergedArgs, true);
     let position: number;
-    const hasRequestedPosition = args.position !== undefined && args.position !== null;
+    const requestedPositionValue = inputBlock.position ?? args.position;
+    const hasRequestedPosition = requestedPositionValue !== undefined && requestedPositionValue !== null;
     if (hasRequestedPosition) {
-      const requestedPosition = typeof args.position === "number" ? args.position : Number(args.position);
+      const requestedPosition = typeof requestedPositionValue === "number" ? requestedPositionValue : Number(requestedPositionValue);
       if (!Number.isSafeInteger(requestedPosition) || requestedPosition < 0) throw new Error("position precisa ser um inteiro igual ou maior que zero");
       const { data: blocks, error: listError } = await context.supabase.from("step_blocks").select("id, position").eq("step_id", step.id).order("position", { ascending: true });
       if (listError) throw listError;
@@ -187,10 +255,9 @@ async function callTool(name: string, args: Record<string, unknown>, context: Mc
       if (lastError) throw lastError;
       position = (last?.position ?? -1) + 1;
     }
-    const payload = { ...settings, content };
     const { data, error: queryError } = await context.supabase.from("step_blocks").insert({ step_id: step.id, position, block_type: item, content: payload }).select("id, step_id, position, block_type, content").single();
     if (queryError) throw queryError;
-    return toolText({ block: data });
+    return toolText({ block: { id: data.id, stepId: data.step_id, position: data.position, type: data.block_type, properties: data.content } });
   }
   if (name === "izquiz_update_block") {
     const { data: existing, error: blockError } = await context.supabase.from("step_blocks").select("id, step_id, block_type, content").eq("id", String(args.blockId)).maybeSingle();
@@ -198,13 +265,14 @@ async function callTool(name: string, args: Record<string, unknown>, context: Mc
     if (!existing) throw new Error("Componente não encontrado ou não autorizado");
     await getAuthorizedStep(context, existing.step_id);
     const previous = existing.content && typeof existing.content === "object" && !Array.isArray(existing.content) ? existing.content as Record<string, unknown> : {};
-    const settings = args.settings && typeof args.settings === "object" && !Array.isArray(args.settings) ? args.settings as Record<string, unknown> : {};
-    const content = { ...previous, ...settings, ...(typeof args.content === "string" ? { content: args.content } : {}) };
-    const patch: Record<string, unknown> = { content };
-    if (typeof args.item === "string" && args.item.trim()) patch.block_type = args.item.trim();
+    const requestedPatch = recordValue(args.patch);
+    const properties = { ...previous, ...recordValue(args.settings), ...recordValue(requestedPatch.properties), ...recordValue(args.properties), ...(typeof args.content === "string" ? { content: args.content } : {}) };
+    const patch: Record<string, unknown> = { content: properties };
+    const requestedType = requestedPatch.type ?? args.item;
+    if (typeof requestedType === "string" && requestedType.trim()) patch.block_type = normalizeBlockType(requestedType);
     const { data, error: queryError } = await context.supabase.from("step_blocks").update(patch).eq("id", existing.id).select("id, step_id, position, block_type, content").single();
     if (queryError) throw queryError;
-    return toolText({ block: data });
+    return toolText({ block: { id: data.id, stepId: data.step_id, position: data.position, type: data.block_type, properties: data.content } });
   }
   if (name === "izquiz_delete_block") {
     const { data: existing, error: blockError } = await context.supabase.from("step_blocks").select("id, step_id").eq("id", String(args.blockId)).maybeSingle();
