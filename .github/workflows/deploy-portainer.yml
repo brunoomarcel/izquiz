@@ -30,8 +30,6 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          IZQUIZ_MCP_TOKEN: ${{ secrets.IZQUIZ_MCP_TOKEN }}
-          IZQUIZ_MCP_USER_ID: ${{ secrets.IZQUIZ_MCP_USER_ID }}
         run: |
           set -euo pipefail
           : "${VPS_HOST:?Configure o secret VPS_HOST}"
@@ -41,9 +39,6 @@ jobs:
           : "${NEXT_PUBLIC_SUPABASE_URL:?Configure o secret NEXT_PUBLIC_SUPABASE_URL}"
           : "${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:?Configure o secret NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}"
           : "${SUPABASE_SERVICE_ROLE_KEY:?Configure o secret SUPABASE_SERVICE_ROLE_KEY}"
-          : "${IZQUIZ_MCP_TOKEN:?Configure o secret IZQUIZ_MCP_TOKEN}"
-          : "${IZQUIZ_MCP_USER_ID:?Configure o secret IZQUIZ_MCP_USER_ID}"
-
       - name: Configurar acesso SSH
         env:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}

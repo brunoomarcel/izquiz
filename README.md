@@ -52,7 +52,8 @@ Em produção, o GitHub Actions conecta à VPS por SSH, cria uma versão do secr
 Configure os seguintes secrets em **Settings > Secrets and variables > Actions** no GitHub:
 
 - `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` e `VPS_DEPLOY_PATH` para acesso e pasta de deploy na VPS. `VPS_PORT` é opcional e assume `22`.
-- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `IZQUIZ_MCP_TOKEN` e `IZQUIZ_MCP_USER_ID`.
+- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` e `SUPABASE_SERVICE_ROLE_KEY`.
+- `IZQUIZ_MCP_TOKEN` e `IZQUIZ_MCP_USER_ID` são opcionais e servem apenas para o acesso de fallback do MCP.
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` é opcional.
 - `PORTAINER_API_KEY` e `PORTAINER_WEBHOOK_URL` não são usados por esse deploy.
 
