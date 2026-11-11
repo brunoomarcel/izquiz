@@ -31,4 +31,4 @@
 .funnel-more:hover{border-color:#a9c3f7;background:#f5f8ff;color:var(--blue)}
 
 /* Keep the editor palette iconography at a consistent, intentional scale. */
-.component-grid button .block-icon{display:block;width:48px;height:48px;flex:none;margin:0 auto 6px}
+.component-grid button .block-icon{display:block;width:24px;height:24px;flex:none;margin:0 auto 5px;stroke-width:1.8}
