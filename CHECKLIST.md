@@ -90,13 +90,21 @@ Legenda: `[x]` completo, `[~]` parcialmente implementado, `[ ]` pendente.
 - [x] Cache local dos documentos do editor.
 - [x] Carregamento de funis e etapas pelo Supabase.
 - [ ] Persistir todas as propriedades específicas de cada elemento.
-- [ ] Validar publicação e visualização pública do funil.
-- [ ] Testar recuperação após recarregar a página.
+- [x] Usar `step_blocks` como estrutura canônica no editor, API MCP e quiz público.
+- [x] Preservar UUIDs dos blocos e sincronizar criação, edição, exclusão e ordem por operação transacional.
+- [x] Exibir estado de salvamento e rejeitar gravações baseadas em uma revisão antiga.
+- [x] Preparar migração dos `settings.textBlocks` com backup privado, ordenação determinística e rollback documentado.
+- [ ] Aplicar a migração no banco Supabase depois de revisão; produção permaneceu intacta nesta tarefa.
+- [ ] Validar publicação e visualização pública do funil após a migração.
+- [ ] Testar recuperação após recarregar a página em ambiente integrado ao banco.
 
 ## Validação
 
-- [ ] Executar `npm.cmd run lint` sem warnings.
-- [ ] Executar `npm.cmd run build`.
+- [~] Executar `npm.cmd run lint`; sem erros, warnings preexistentes ainda precisam ser tratados.
+- [~] Executar `npm.cmd run build`: compilação, TypeScript e geração estática passam; cópia final do output standalone falha no Windows com `EPERM` ao criar diretórios dentro de `.next/standalone`.
+- [x] Adicionar testes unitários de leitura canônica, serialização, conversão legado e verificações estruturais de segurança/idempotência da migração.
+- [ ] Executar testes de integração para MCP/editor e ciclo de persistência no banco após aplicar a migração em ambiente de validação.
+- [ ] Atualizar/reconectar o plugin ChatGPT IZQUIZ e validar as ferramentas de blocos; a conexão de ferramentas disponível nesta sessão ainda não expõe as operações novas.
 - [ ] Testar os elementos no navegador em desktop e mobile.
 - [ ] Conferir os elementos com os prints de referência enviados.
 

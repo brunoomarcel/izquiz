@@ -18,8 +18,7 @@ function getServiceRoleKey() {
   const envKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
   if (envKey) return envKey;
   try {
-    const secretPath = process.env.SUPABASE_SERVICE_ROLE_KEY_FILE ?? "/run/secrets/supabase_service_role_key";
-    return readFileSync(secretPath, "utf8").trim() || null;
+    return readFileSync("/run/secrets/supabase_service_role_key", "utf8").trim() || null;
   } catch {
     return null;
   }
@@ -39,6 +38,13 @@ const BLOCK_TYPES = ["Texto", "Argumentos", "Alerta", "FAQ", "Imagem", "Vídeo",
 
 function recordValue(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function canonicalStepSettings(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const settings = { ...(value as Record<string, unknown>) };
+  delete settings.textBlocks;
+  return settings;
 }
 
 function normalizeBlockType(value: unknown) {
@@ -203,7 +209,7 @@ async function callTool(name: string, args: Record<string, unknown>, context: Mc
     if (!funnel) throw new Error("Informe funnelId ou slug");
     const { data: steps, error: stepsError } = await context.supabase.from("funnel_steps").select("id, position, title, step_type, settings, step_blocks(id, position, block_type, content)").eq("funnel_id", funnel.id).order("position");
     if (stepsError) throw stepsError;
-    return toolText({ ...funnel, steps: (steps ?? []).map((step) => ({ id: step.id, position: step.position, title: step.title, stepType: step.step_type, settings: step.settings, blocks: (step.step_blocks ?? []).map((block) => ({ id: block.id, position: block.position, type: block.block_type, properties: block.content })) })) });
+    return toolText({ ...funnel, steps: (steps ?? []).map((step) => ({ id: step.id, position: step.position, title: step.title, stepType: step.step_type, settings: canonicalStepSettings(step.settings), blocks: (step.step_blocks ?? []).map((block) => ({ id: block.id, position: block.position, type: block.block_type, properties: block.content })) })) });
   }
   if (name === "izquiz_create_funnel") {
     const workspaceId = String(args.workspaceId ?? context.workspaceIds[0]);
@@ -241,7 +247,7 @@ async function callTool(name: string, args: Record<string, unknown>, context: Mc
       const createdSteps = [];
       for (let index = 0; index < requestedSteps.length; index += 1) {
         const requested = requestedSteps[index];
-        const { data: step, error: stepError } = await context.supabase.from("funnel_steps").insert({ funnel_id: funnel.id, position: index, title: requested.title, step_type: requested.step_type, settings: requested.settings }).select("id, position, title, step_type, settings").single();
+        const { data: step, error: stepError } = await context.supabase.from("funnel_steps").insert({ funnel_id: funnel.id, position: index, title: requested.title, step_type: requested.step_type, settings: canonicalStepSettings(requested.settings) }).select("id, position, title, step_type, settings").single();
         if (stepError) throw stepError;
         let createdBlocks: Array<{ id: string; position: number; block_type: string; content: unknown }> = [];
         if (requested.blocks.length) {
@@ -280,7 +286,7 @@ async function callTool(name: string, args: Record<string, unknown>, context: Mc
     await getFunnel(context, String(args.funnelId));
     const { data, error: queryError } = await context.supabase.from("funnel_steps").select("id, position, title, step_type, settings").eq("funnel_id", String(args.funnelId)).order("position");
     if (queryError) throw queryError;
-    return toolText({ steps: data ?? [] });
+    return toolText({ steps: (data ?? []).map((step) => ({ ...step, settings: canonicalStepSettings(step.settings) })) });
   }
   if (name === "izquiz_list_blocks") {
     const step = await getAuthorizedStep(context, String(args.stepId));
@@ -414,10 +420,10 @@ async function callTool(name: string, args: Record<string, unknown>, context: Mc
     const patch: Record<string, unknown> = {};
     if (typeof args.title === "string") patch.title = args.title;
     if (typeof args.stepType === "string") patch.step_type = normalizeStepType(args.stepType);
-    if (args.settings && typeof args.settings === "object") patch.settings = args.settings;
+    if (args.settings && typeof args.settings === "object") patch.settings = canonicalStepSettings(args.settings);
     const { data, error: queryError } = await context.supabase.from("funnel_steps").update(patch).eq("id", String(args.stepId)).select("id, position, title, step_type, settings").single();
     if (queryError) throw queryError;
-    return toolText(data);
+    return toolText({ ...data, settings: canonicalStepSettings(data.settings) });
   }
   if (name === "izquiz_reorder_steps") {
     const funnel = await getFunnel(context, String(args.funnelId));

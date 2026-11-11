@@ -3,6 +3,7 @@ import type { CanvasBlock, EditorStep } from "@/components/editor/types";
 type EditorDocumentCache = {
   steps: EditorStep[];
   blocksByStep: Record<string, CanvasBlock[]>;
+  pendingStepRevisions?: Record<string, string>;
 };
 
 function cacheKey(funnelId: string) {

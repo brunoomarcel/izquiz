@@ -46,6 +46,8 @@ export type TestimonialItem = {
 
 export type CanvasBlock = {
   id: number;
+  /** UUID persistido na tabela step_blocks; ausente apenas antes do primeiro save. */
+  blockId?: string;
   item: string;
   content: string;
   width?: number;

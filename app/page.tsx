@@ -39,13 +39,14 @@ import { DomainSettings } from "@/components/editor/DomainSettings";
 import { DomainShareView } from "@/components/editor/DomainShareView";
 import { getPublicBaseUrl } from "@/lib/public-url";
 import type { CanvasBlock, EditorStep } from "@/components/editor/types";
-import { groupBlocksByStep } from "@/lib/editor/document";
+import { groupBlocksByStep, serializeCanvasBlocks } from "@/lib/editor/document";
 import { readEditorDocumentCache, writeEditorDocumentCache } from "@/lib/editor/cache";
 
 type Screen = "Dashboard" | "Analytics";
 type EditorView = "Editar" | "Integrar" | "Fluxo" | "Resultados" | "Compartilhar" | "Configurações";
+type FunnelStatus = "draft" | "published" | "archived";
 type Step = EditorStep;
-type EditorSession = { inEditor: boolean; screen: Screen; editorView: EditorView; funnelId: string | null; sidebarCollapsed: boolean; published: boolean };
+type EditorSession = { inEditor: boolean; screen: Screen; editorView: EditorView; funnelId: string | null; sidebarCollapsed: boolean; published: boolean; status?: FunnelStatus };
 
 function readEditorSession(): EditorSession | null {
   if (typeof window === "undefined") return null;
@@ -101,14 +102,32 @@ export default function Home() {
   const [editorView, setEditorView] = useState<EditorView>(savedSession?.editorView ?? "Editar");
   const [inEditor, setInEditor] = useState(savedSession?.inEditor ?? false);
   const [toast, setToast] = useState("");
-  const [published, setPublished] = useState(savedSession?.published ?? false);
+  const [funnelStatus, setFunnelStatus] = useState<FunnelStatus>(savedSession?.status ?? (savedSession?.published ? "published" : "draft"));
   const [editorSteps, setEditorSteps] = useState<Step[]>(blankSteps);
   const [activeFunnelId, setActiveFunnelId] = useState<string | null>(savedSession?.funnelId ?? null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(savedSession?.sidebarCollapsed ?? false);
 
   useEffect(() => {
-    window.localStorage.setItem("izquiz:editor-session", JSON.stringify({ inEditor, screen, editorView, funnelId: activeFunnelId, sidebarCollapsed, published } satisfies EditorSession));
-  }, [activeFunnelId, editorView, inEditor, published, screen, sidebarCollapsed]);
+    window.localStorage.setItem("izquiz:editor-session", JSON.stringify({ inEditor, screen, editorView, funnelId: activeFunnelId, sidebarCollapsed, published: funnelStatus === "published", status: funnelStatus } satisfies EditorSession));
+  }, [activeFunnelId, editorView, inEditor, funnelStatus, screen, sidebarCollapsed]);
+
+  useEffect(() => {
+    if (!supabase || !activeFunnelId) return;
+    let active = true;
+    void supabase.from("funnels").select("status").eq("id", activeFunnelId).maybeSingle().then(({ data, error }) => {
+      if (active && !error && data && ["draft", "published", "archived"].includes(data.status)) setFunnelStatus(data.status as FunnelStatus);
+    });
+    return () => { active = false; };
+  }, [supabase, activeFunnelId]);
+
+  useEffect(() => {
+    const onStatus = (event: Event) => {
+      const status = (event as CustomEvent<{ status: FunnelStatus }>).detail.status;
+      if (["draft", "published", "archived"].includes(status)) setFunnelStatus(status);
+    };
+    window.addEventListener("izquiz:funnel-status", onStatus);
+    return () => window.removeEventListener("izquiz:funnel-status", onStatus);
+  }, []);
 
   const notify = useCallback((message: string) => { setToast(message); window.setTimeout(() => setToast(""), 2200); }, []);
   const openEditor = (mode: "blank" | "sample" = "blank", funnelId: string | null = null) => { setActiveFunnelId(funnelId); setEditorSteps(mode === "sample" ? steps : blankSteps); setScreen("Dashboard"); setEditorView("Editar"); setSidebarCollapsed(true); setInEditor(true); if (mode === "sample") notify("Funil aberto"); else if (!funnelId) notify("Novo funil criado com template inicial"); };
@@ -138,14 +157,14 @@ export default function Home() {
   if (supabase && !user) return <AuthScreen supabase={supabase} />;
 
   if (inEditor) {
-    return <ProductFrame toast={toast} editorMode sidebarCollapsed={sidebarCollapsed} setSidebarCollapsed={setSidebarCollapsed} screen={screen} editorView={editorView} setScreen={setScreen} setEditorView={setEditorView} setInEditor={setInEditor} notify={notify} published={published} setPublished={setPublished}>{editorView === "Editar" ? <EditorCanvas supabase={supabase} funnelId={activeFunnelId} notify={notify} stepsData={editorSteps} onBack={() => { setInEditor(false); setSidebarCollapsed(false); }} /> : <SecondaryView editorView={editorView} screen={screen} notify={notify} funnelId={activeFunnelId} supabase={supabase} />}</ProductFrame>;
+    return <ProductFrame toast={toast} editorMode sidebarCollapsed={sidebarCollapsed} setSidebarCollapsed={setSidebarCollapsed} screen={screen} editorView={editorView} setScreen={setScreen} setEditorView={setEditorView} setInEditor={setInEditor} notify={notify} funnelStatus={funnelStatus}>{editorView === "Editar" ? <EditorCanvas supabase={supabase} funnelId={activeFunnelId} notify={notify} stepsData={editorSteps} onBack={() => { setInEditor(false); setSidebarCollapsed(false); }} /> : <SecondaryView editorView={editorView} screen={screen} notify={notify} funnelId={activeFunnelId} supabase={supabase} />}</ProductFrame>;
   }
 
   if (editorView !== "Editar" || screen === "Analytics") {
-    return <ProductFrame toast={toast} sidebarCollapsed={sidebarCollapsed} setSidebarCollapsed={setSidebarCollapsed} screen={screen} editorView={editorView} setScreen={setScreen} setEditorView={setEditorView} setInEditor={setInEditor} notify={notify} published={published} setPublished={setPublished}><SecondaryView editorView={editorView} screen={screen} notify={notify} funnelId={activeFunnelId} supabase={supabase} /></ProductFrame>;
+    return <ProductFrame toast={toast} sidebarCollapsed={sidebarCollapsed} setSidebarCollapsed={setSidebarCollapsed} screen={screen} editorView={editorView} setScreen={setScreen} setEditorView={setEditorView} setInEditor={setInEditor} notify={notify} funnelStatus={funnelStatus}><SecondaryView editorView={editorView} screen={screen} notify={notify} funnelId={activeFunnelId} supabase={supabase} /></ProductFrame>;
   }
 
-  return <ProductFrame toast={toast} sidebarCollapsed={sidebarCollapsed} setSidebarCollapsed={setSidebarCollapsed} screen={screen} editorView={editorView} setScreen={setScreen} setEditorView={setEditorView} setInEditor={setInEditor} notify={notify} published={published} setPublished={setPublished}>
+  return <ProductFrame toast={toast} sidebarCollapsed={sidebarCollapsed} setSidebarCollapsed={setSidebarCollapsed} screen={screen} editorView={editorView} setScreen={setScreen} setEditorView={setEditorView} setInEditor={setInEditor} notify={notify} funnelStatus={funnelStatus}>
     <Dashboard supabase={supabase} userId={user?.id ?? "local-user"} openEditor={openEditor} notify={notify} />
   </ProductFrame>;
 }
@@ -173,7 +192,7 @@ function AuthScreen({ supabase }: { supabase: NonNullable<ReturnType<typeof crea
   return <main className="auth-shell"><section className="auth-card"><div className="auth-brand"><div className="logo-mark">iz</div><span>izquiz</span></div><p className="eyebrow">QUIZ BUILDER</p><h1>{mode === "login" ? "Entre no seu painel" : "Crie sua conta"}</h1><p className="auth-copy">Crie, publique e acompanhe seus quizzes interativos em um só lugar.</p><form onSubmit={submit}><label>E-mail<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="voce@empresa.com" required /></label><label>Senha<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mínimo de 6 caracteres" minLength={6} required /></label>{message && <p className="auth-message">{message}</p>}<button className="primary-btn auth-submit" disabled={busy}>{busy ? "Aguarde..." : mode === "login" ? "Entrar" : "Criar conta"}</button></form><button className="auth-switch" onClick={() => { setMode(mode === "login" ? "signup" : "login"); setMessage(""); }}>{mode === "login" ? "Ainda não tenho uma conta" : "Já tenho uma conta"}</button></section></main>;
 }
 
-function ProductFrame({ children, screen, editorView, setScreen, setEditorView, setInEditor, notify, published, setPublished, editorMode = false, toast, sidebarCollapsed, setSidebarCollapsed }: { children: React.ReactNode; screen: Screen; editorView: EditorView; setScreen: (value: Screen) => void; setEditorView: (value: EditorView) => void; setInEditor: (value: boolean) => void; notify: (message: string) => void; published: boolean; setPublished: (value: boolean) => void; editorMode?: boolean; toast: string; sidebarCollapsed: boolean; setSidebarCollapsed: (value: boolean) => void }) {
+function ProductFrame({ children, screen, editorView, setScreen, setEditorView, setInEditor, notify, funnelStatus, editorMode = false, toast, sidebarCollapsed, setSidebarCollapsed }: { children: React.ReactNode; screen: Screen; editorView: EditorView; setScreen: (value: Screen) => void; setEditorView: (value: EditorView) => void; setInEditor: (value: boolean) => void; notify: (message: string) => void; funnelStatus: FunnelStatus; editorMode?: boolean; toast: string; sidebarCollapsed: boolean; setSidebarCollapsed: (value: boolean) => void }) {
   return <div className={`product-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
     <aside className="product-sidebar">
       <button className="product-logo" aria-label="Voltar ao início" onClick={() => { setScreen("Dashboard"); setEditorView("Editar"); setInEditor(false); setSidebarCollapsed(false); }}><div className="logo-mark">iz</div><span>izquiz</span></button>
@@ -188,7 +207,7 @@ function ProductFrame({ children, screen, editorView, setScreen, setEditorView, 
     <div className="product-main">
       <header className="product-header">
         <div className="header-title"><span className="header-home">⌂</span><strong>{editorMode ? "FE POR UM FIO" : editorView === "Editar" ? screen : editorView}</strong></div>
-        {editorMode && <EditorNav editorView={editorView} setEditorView={setEditorView} published={published} setPublished={setPublished} notify={notify} />}
+        {editorMode && <EditorNav editorView={editorView} setEditorView={setEditorView} funnelStatus={funnelStatus} notify={notify} />}
       </header>
       <div className="page-content">{children}</div>
     </div>
@@ -196,9 +215,10 @@ function ProductFrame({ children, screen, editorView, setScreen, setEditorView, 
   </div>;
 }
 
-function EditorNav({ editorView, setEditorView, published, setPublished, notify }: { editorView: EditorView; setEditorView: (value: EditorView) => void; published: boolean; setPublished: (value: boolean) => void; notify: (message: string) => void }) {
+function EditorNav({ editorView, setEditorView, funnelStatus, notify }: { editorView: EditorView; setEditorView: (value: EditorView) => void; funnelStatus: FunnelStatus; notify: (message: string) => void }) {
   const tabs: EditorView[] = ["Editar", "Integrar", "Fluxo", "Resultados", "Compartilhar", "Configurações"];
-  return <><div className="editor-tabs">{tabs.map((tab) => <button key={tab} className={editorView === tab ? "editor-tab active" : "editor-tab"} onClick={() => setEditorView(tab)}><Icon>{tab === "Editar" ? "✎" : tab === "Integrar" ? "⌘" : tab === "Fluxo" ? "⌘" : tab === "Resultados" ? "♙" : tab === "Compartilhar" ? "↗" : "⚙"}</Icon>{tab}</button>)}</div><div className="header-actions"><button className="draft-btn">◈ {published ? "Publicado" : "Rascunho"}</button><button className="primary-btn" onClick={() => { window.dispatchEvent(new Event("izquiz:publish")); setPublished(true); notify("Salvando e publicando o funil..."); }}>⇩ Publicar</button></div></>;
+  const labels: Record<FunnelStatus, string> = { draft: "Rascunho", published: "Publicado", archived: "Arquivado" };
+  return <><div className="editor-tabs">{tabs.map((tab) => <button key={tab} className={editorView === tab ? "editor-tab active" : "editor-tab"} onClick={() => setEditorView(tab)}><Icon>{tab === "Editar" ? "✎" : tab === "Integrar" ? "⌘" : tab === "Fluxo" ? "⌘" : tab === "Resultados" ? "♙" : tab === "Compartilhar" ? "↗" : "⚙"}</Icon>{tab}</button>)}</div><div className="header-actions"><span className={`draft-btn funnel-status funnel-status-${funnelStatus}`} title={funnelStatus === "published" ? "As alterações salvas no editor ficam disponíveis imediatamente no quiz público." : undefined}>◈ {labels[funnelStatus]}</span>{funnelStatus === "archived" ? <button className="primary-btn" onClick={() => window.dispatchEvent(new Event("izquiz:restore"))}>Restaurar rascunho</button> : <>{funnelStatus === "published" && <button className="draft-btn" onClick={() => window.dispatchEvent(new Event("izquiz:unpublish"))}>Despublicar</button>}<button className="primary-btn" onClick={() => { window.dispatchEvent(new Event("izquiz:publish")); notify("Salvando e publicando o funil..."); }}>⇩ Publicar</button><button className="draft-btn" onClick={() => window.dispatchEvent(new Event("izquiz:archive"))}>Arquivar</button></>}</div></>;
 }
 
 type FunnelItem = { id: string; name: string; slug: string; status: string; folder_id: string | null; leads: number };
@@ -530,11 +550,15 @@ function EditorCanvas({ supabase, funnelId, notify, stepsData, onBack }: { supab
   const [dragOverCanvas, setDragOverCanvas] = useState(false);
   const [blocksByStep, setBlocksByStep] = useState<Record<string, CanvasBlock[]>>(cachedDocument?.blocksByStep ?? {});
   const persistQueue = useRef<Promise<void>>(Promise.resolve());
+  const stepRevision = useRef<Record<string, string>>({});
+  const localRevision = useRef<Record<string, number>>({});
+  const savedLocalRevision = useRef<Record<string, number>>({});
   const [selectedBlockId, setSelectedBlockId] = useState<number | null>(savedSelection?.blockId ?? null);
   const [editingBlockId, setEditingBlockId] = useState<number | null>(null);
   const [movingBlockId, setMovingBlockId] = useState<number | null>(null);
   const [dropIndicator, setDropIndicator] = useState<{ targetId: number; position: "before" | "after" } | null>(null);
   const [blocksLoaded, setBlocksLoaded] = useState(Boolean(cachedDocument));
+  const [saveStatus, setSaveStatus] = useState<"local" | "saved" | "unsaved" | "saving" | "error">(supabase && funnelId ? "saving" : "local");
   const nextBlockId = useRef(1);
   const funnelStepCount = editableSteps.filter((step) => !step.break).length;
   const currentFunnelStep = editableSteps.slice(0, selected + 1).filter((step) => !step.break).length;
@@ -547,7 +571,7 @@ function EditorCanvas({ supabase, funnelId, notify, stepsData, onBack }: { supab
     async function loadSteps() {
       const db = client;
       if (!db) return;
-      const result = await db.from("funnel_steps").select("id, title, step_type, position").eq("funnel_id", funnelId).order("position");
+      const result = await db.from("funnel_steps").select("id, title, step_type, position, updated_at").eq("funnel_id", funnelId).order("position");
       if (!active || result.error || !result.data) return;
       const loadedSteps = result.data.map((step) => ({
         id: step.id,
@@ -555,24 +579,41 @@ function EditorCanvas({ supabase, funnelId, notify, stepsData, onBack }: { supab
         kind: step.step_type === "intro" ? "INTRO" : step.step_type === "result" ? "RESULTADO" : "PERGUNTA",
         active: false,
       }));
+      const pendingRevisions = cachedDocument?.pendingStepRevisions ?? {};
+      stepRevision.current = Object.fromEntries(result.data.map((step) => [step.id, pendingRevisions[step.id] ?? step.updated_at]));
       const stepIds = loadedSteps.map((step) => step.id);
-      const blockResult = stepIds.length ? await db.from("step_blocks").select("step_id, position, block_type, content").in("step_id", stepIds).order("position") : { data: [], error: null };
+      const blockResult = stepIds.length ? await db.from("step_blocks").select("id, step_id, position, block_type, content").in("step_id", stepIds).order("position") : { data: [], error: null };
       if (!active) return;
+      if (blockResult.error) { notify("Não foi possível carregar os componentes salvos"); return; }
       setEditableSteps(loadedSteps);
       const remoteDocument = groupBlocksByStep(stepIds, blockResult.data ?? []);
-      const document = Object.fromEntries(stepIds.map((stepId) => [stepId, remoteDocument[stepId]?.length ? remoteDocument[stepId] : cachedDocument?.blocksByStep[stepId] ?? []])) as Record<string, CanvasBlock[]>;
+      const document = Object.fromEntries(stepIds.map((stepId) => {
+        const hasPendingLocalCopy = Object.hasOwn(pendingRevisions, stepId) && Array.isArray(cachedDocument?.blocksByStep[stepId]);
+        if (hasPendingLocalCopy) {
+          localRevision.current[stepId] = 1;
+          savedLocalRevision.current[stepId] = 0;
+          return [stepId, cachedDocument!.blocksByStep[stepId] ?? []];
+        }
+        localRevision.current[stepId] = 0;
+        savedLocalRevision.current[stepId] = 0;
+        return [stepId, remoteDocument[stepId] ?? []];
+      })) as Record<string, CanvasBlock[]>;
       setBlocksByStep(document);
       nextBlockId.current = Math.max(1, ...Object.values(document).flat().map((block) => block.id + 1));
       setBlocksLoaded(true);
+      if (Object.keys(pendingRevisions).some((stepId) => stepIds.includes(stepId))) setSaveStatus("unsaved");
     }
     void loadSteps();
     return () => { active = false; };
-  }, [supabase, funnelId, cachedDocument]);
+  }, [supabase, funnelId, cachedDocument, notify]);
 
   useEffect(() => {
     if (!funnelId || editableSteps.length === 0) return;
-    writeEditorDocumentCache(funnelId, { steps: editableSteps, blocksByStep });
-  }, [funnelId, editableSteps, blocksByStep]);
+    const pendingStepRevisions = Object.fromEntries(Object.entries(localRevision.current)
+      .filter(([stepId, revision]) => revision > (savedLocalRevision.current[stepId] ?? 0) && stepRevision.current[stepId])
+      .map(([stepId]) => [stepId, stepRevision.current[stepId]]));
+    writeEditorDocumentCache(funnelId, { steps: editableSteps, blocksByStep, pendingStepRevisions });
+  }, [funnelId, editableSteps, blocksByStep, saveStatus]);
   useEffect(() => {
     window.localStorage.setItem(selectionKey, JSON.stringify({ stepIndex: selected, blockId: selectedBlockId }));
   }, [selected, selectedBlockId, selectionKey]);
@@ -580,6 +621,7 @@ function EditorCanvas({ supabase, funnelId, notify, stepsData, onBack }: { supab
   const blocks = useMemo(() => activeStepId ? blocksByStep[activeStepId] ?? [] : [], [activeStepId, blocksByStep]);
   const setBlocks = useCallback((update: SetStateAction<CanvasBlock[]>) => {
     if (!activeStepId) return;
+    localRevision.current[activeStepId] = (localRevision.current[activeStepId] ?? 0) + 1;
     setBlocksByStep((current) => {
       const currentBlocks = current[activeStepId] ?? [];
       const nextBlocks = typeof update === "function" ? update(currentBlocks) : update;
@@ -667,7 +709,7 @@ function EditorCanvas({ supabase, funnelId, notify, stepsData, onBack }: { supab
   function duplicateSelectedBlock() {
     const block = blocks.find((item) => item.id === selectedBlockId);
     if (!block) return;
-    const copy = { ...block, id: nextBlockId.current++ };
+    const copy = { ...block, id: nextBlockId.current++, blockId: undefined };
     setBlocks((current) => [...current, copy]);
     setSelectedBlockId(copy.id);
     notify("Elemento duplicado");
@@ -810,8 +852,9 @@ function EditorCanvas({ supabase, funnelId, notify, stepsData, onBack }: { supab
   const selectedBlock = blocks.find((block) => block.id === selectedBlockId) ?? null;
 
   function renderBlock(block: CanvasBlock) {
-    const extractedBlock = BlockRenderer({ block, isEditing: editingBlockId === block.id, onChange: updateBlockContent, onStopEditing: () => setEditingBlockId(null), onNotify: notify });
-    if (extractedBlock) return extractedBlock;
+    if (["Texto", "Imagem", "Botão"].includes(block.item)) {
+      return <BlockRenderer block={block} isEditing={editingBlockId === block.id} onChange={updateBlockContent} onStopEditing={() => setEditingBlockId(null)} onNotify={notify} />;
+    }
     if (block.item === "Alerta") return <AlertBlock block={block} />;
     if (block.item === "Argumentos") return <ArgumentsBlock block={block} onNotify={notify} onBlockChange={updateBlockStyle} />;
     if (block.item === "Vídeo") {
@@ -849,25 +892,18 @@ function EditorCanvas({ supabase, funnelId, notify, stepsData, onBack }: { supab
     if (blocksLoaded || !supabase || !funnelId || !activeStepId) {
       return () => { active = false; };
     }
+    const stepId = activeStepId;
     async function loadBlocks() {
       const client = supabase;
       if (!client) return;
-      const blockResult = await client.from("step_blocks").select("position, block_type, content").eq("step_id", activeStepId).order("position");
+      const blockResult = await client.from("step_blocks").select("id, position, block_type, content").eq("step_id", stepId).order("position");
       if (!active) return;
       if (blockResult.error) {
         notify("Não foi possível carregar os componentes");
       } else {
-        const loadedBlocks = (blockResult.data ?? []).map((row, index) => {
-          const payload = (row.content ?? {}) as Record<string, unknown>;
-          return { id: index + 1, item: row.block_type, content: typeof payload.content === "string" ? payload.content : row.block_type, ...payload } as CanvasBlock;
-        });
-        let cachedBlocks: CanvasBlock[] = [];
-        if (blocksCacheKey) {
-          try { cachedBlocks = JSON.parse(window.localStorage.getItem(blocksCacheKey) ?? "[]") as CanvasBlock[]; } catch { cachedBlocks = []; }
-        }
-        const sourceBlocks = loadedBlocks.length > 0 ? loadedBlocks : cachedBlocks;
-        setBlocks((current) => loadedBlocks.length > 0 ? loadedBlocks : current.length > 0 ? current : sourceBlocks);
-        nextBlockId.current = Math.max(nextBlockId.current, sourceBlocks.length + 1);
+        const loadedBlocks = groupBlocksByStep([stepId], (blockResult.data ?? []).map((row) => ({ ...row, step_id: stepId })))[stepId] ?? [];
+        setBlocksByStep((current) => ({ ...current, [stepId]: loadedBlocks }));
+        nextBlockId.current = Math.max(nextBlockId.current, ...loadedBlocks.map((block) => block.id + 1), 1);
       }
       setBlocksLoaded(true);
     }
@@ -877,36 +913,76 @@ function EditorCanvas({ supabase, funnelId, notify, stepsData, onBack }: { supab
 
   const persistBlocks = useCallback((snapshot: CanvasBlock[] = blocks, stepId: string | null = activeStepId) => {
     if (!supabase || !funnelId || !stepId || !blocksLoaded) return Promise.resolve();
+    const snapshotRevision = localRevision.current[stepId] ?? 0;
+    setSaveStatus("saving");
     const cacheKey = stepId === activeStepId ? blocksCacheKey : `izquiz:blocks:${stepId}`;
     if (cacheKey) window.localStorage.setItem(cacheKey, JSON.stringify(snapshot));
     const save = async () => {
-      const deleted = await supabase.from("step_blocks").delete().eq("step_id", stepId);
-      if (deleted.error) { notify(`Erro ao salvar componentes: ${deleted.error.message}`); return; }
-      if (snapshot.length === 0) return;
-      const rows = snapshot.map((block, position) => { const settings = Object.fromEntries(Object.entries(block).filter(([key]) => key !== "id" && key !== "item" && key !== "content")); return { step_id: stepId, position, block_type: block.item, content: { content: block.content, ...settings } }; });
-      const inserted = await supabase.from("step_blocks").insert(rows);
-      if (inserted.error) notify(`Erro ao salvar componentes: ${inserted.error.message}`);
+      const rows = serializeCanvasBlocks(stepId, snapshot).map(({ id, position, block_type, content }) => ({ id: id ?? null, position, type: block_type, properties: content }));
+      const expectedUpdatedAt = stepRevision.current[stepId];
+      if (!expectedUpdatedAt) throw new Error("Não foi possível identificar a versão atual da etapa. Recarregue o editor.");
+      const saved = await supabase.rpc("sync_step_blocks", { p_step_id: stepId, p_blocks: rows, p_expected_updated_at: expectedUpdatedAt });
+      if (saved.error) throw saved.error;
+      const response = saved.data as { blocks?: Array<{ id: string; position: number }>; updatedAt?: string } | null;
+      const persistedIds = response?.blocks ?? [];
+      if (response?.updatedAt) stepRevision.current[stepId] = response.updatedAt;
+      const hasNewerLocalEdits = (localRevision.current[stepId] ?? 0) !== snapshotRevision;
+      if (!hasNewerLocalEdits) savedLocalRevision.current[stepId] = snapshotRevision;
+      const persistedIdByLocalId = new Map(snapshot.map((block, index) => [block.id, persistedIds[index]?.id ?? block.blockId]));
+      setBlocksByStep((current) => ({
+        ...current,
+        [stepId]: (current[stepId] ?? snapshot).map((block) => ({ ...block, blockId: persistedIdByLocalId.get(block.id) })),
+      }));
+      setSaveStatus(hasNewerLocalEdits ? "unsaved" : "saved");
     };
-    persistQueue.current = persistQueue.current.then(save, save);
+    persistQueue.current = persistQueue.current.then(save, save).catch((error: unknown) => {
+      setSaveStatus("error");
+      notify(`Erro ao salvar componentes: ${error instanceof Error ? error.message : "falha inesperada"}`);
+      throw error;
+    });
     return persistQueue.current;
   }, [blocks, activeStepId, blocksLoaded, blocksCacheKey, supabase, funnelId, notify]);
 
   useEffect(() => {
-    if (!blocksLoaded || !supabase || !funnelId || !activeStepId) return;
-    const saveTimer = window.setTimeout(() => { void persistBlocks(); }, 250);
+    if (!blocksLoaded || !supabase || !funnelId || !activeStepId || (localRevision.current[activeStepId] ?? 0) <= (savedLocalRevision.current[activeStepId] ?? 0)) return;
+    setSaveStatus("unsaved");
+    const saveTimer = window.setTimeout(() => { void persistBlocks().catch((error: unknown) => notify(`Erro ao salvar. Suas alterações continuam no navegador: ${error instanceof Error ? error.message : "falha inesperada"}`)); }, 250);
     return () => { window.clearTimeout(saveTimer); };
-  }, [blocks, blocksLoaded, supabase, funnelId, activeStepId, persistBlocks]);
+  }, [blocks, blocksLoaded, supabase, funnelId, activeStepId, persistBlocks, notify]);
 
   useEffect(() => {
     const publishHandler = () => {
       void persistBlocks().then(async () => {
         if (!supabase || !funnelId) { notify("Funil salvo localmente, mas não foi publicado no banco."); return; }
-        const result = await supabase.from("funnels").update({ status: "published", published_at: new Date().toISOString() }).eq("id", funnelId);
+        const result = await supabase.from("funnels").update({ status: "published", published_at: new Date().toISOString() }).eq("id", funnelId).select("id").maybeSingle();
+        if (!result.error && !result.data) { notify("Não foi possível confirmar a publicação deste funil"); return; }
+        if (!result.error) window.dispatchEvent(new CustomEvent("izquiz:funnel-status", { detail: { status: "published" } }));
         notify(result.error ? `Erro ao publicar o funil: ${result.error.message}` : "Funil publicado com sucesso!");
-      });
+      }).catch((error: unknown) => notify(`Publicação cancelada: ${error instanceof Error ? error.message : "erro ao salvar os componentes"}`));
     };
     window.addEventListener("izquiz:publish", publishHandler);
-    return () => window.removeEventListener("izquiz:publish", publishHandler);
+    const unpublishHandler = async () => {
+      if (!supabase || !funnelId) return;
+      const result = await supabase.from("funnels").update({ status: "draft", published_at: null }).eq("id", funnelId).select("id").maybeSingle();
+      if (result.error) { notify(`Erro ao despublicar: ${result.error.message}`); return; }
+      if (!result.data) { notify("Não foi possível confirmar a despublicação deste funil"); return; }
+      window.dispatchEvent(new CustomEvent("izquiz:funnel-status", { detail: { status: "draft" } }));
+      notify("Funil despublicado; continua salvo como rascunho.");
+    };
+    const setArchivedStatus = async (status: "archived" | "draft") => {
+      if (!supabase || !funnelId) return;
+      const result = await supabase.from("funnels").update({ status, published_at: null }).eq("id", funnelId).select("id").maybeSingle();
+      if (result.error) { notify(`Erro ao ${status === "archived" ? "arquivar" : "restaurar"} o funil: ${result.error.message}`); return; }
+      if (!result.data) { notify("Não foi possível confirmar a alteração do status do funil"); return; }
+      window.dispatchEvent(new CustomEvent("izquiz:funnel-status", { detail: { status } }));
+      notify(status === "archived" ? "Funil arquivado e indisponível ao público." : "Funil restaurado como rascunho.");
+    };
+    const archiveHandler = () => { void setArchivedStatus("archived"); };
+    const restoreHandler = () => { void setArchivedStatus("draft"); };
+    window.addEventListener("izquiz:unpublish", unpublishHandler);
+    window.addEventListener("izquiz:archive", archiveHandler);
+    window.addEventListener("izquiz:restore", restoreHandler);
+    return () => { window.removeEventListener("izquiz:publish", publishHandler); window.removeEventListener("izquiz:unpublish", unpublishHandler); window.removeEventListener("izquiz:archive", archiveHandler); window.removeEventListener("izquiz:restore", restoreHandler); };
   }, [funnelId, notify, persistBlocks, supabase]);
 
   return <div className="editor-page">
@@ -920,6 +996,7 @@ function EditorCanvas({ supabase, funnelId, notify, stepsData, onBack }: { supab
     </div>
     <div className="canvas-wrap">
       <button className="templates-btn" onClick={() => notify("Galeria de modelos em breve")}>▣　Modelos</button>
+      <div className={`editor-save-status editor-save-status-${saveStatus}`} aria-live="polite">{saveStatus === "saving" ? "Salvando…" : saveStatus === "saved" ? "Alterações salvas" : saveStatus === "error" ? "Erro ao salvar" : saveStatus === "unsaved" ? "Alterações não salvas" : "Salvo neste navegador"}{(saveStatus === "error" || saveStatus === "unsaved") && supabase && funnelId && <button type="button" onClick={() => { void persistBlocks().catch(() => undefined); }}>Tentar novamente</button>}</div>
       <div className={"canvas " + (dragOverCanvas ? "canvas-drop-active" : "")} onDragOver={(event) => { event.preventDefault(); if (event.target === event.currentTarget) setDropIndicator(null); setDragOverCanvas(true); }} onDragLeave={() => { setDragOverCanvas(false); setDropIndicator(null); }} onDrop={dropComponent}>
         <div className="canvas-progress" style={{ "--progress-width": `${funnelProgress}%` } as React.CSSProperties} aria-label={`Progresso da etapa: ${funnelProgress}%`} />
         {blocks.length === 0 ? <div className="canvas-empty-state"><div className="canvas-empty-icon">⌁</div><strong>{dragOverCanvas ? "Solte aqui!" : "Canvas vazio"}</strong><span>{dragOverCanvas ? "Solte para adicionar o componente" : "Arraste um componente da barra lateral para começar"}</span></div> : <div className="canvas-content">{blocks.map((block) => <div key={block.id} className={`canvas-block ${selectedBlockId === block.id ? "is-selected" : ""} ${movingBlockId === block.id ? "is-moving" : ""} ${dropIndicator?.targetId === block.id ? `drop-${dropIndicator.position}` : ""}`} draggable onDragStart={(event) => startMovingBlock(event, block.id)} onDragEnd={() => { setMovingBlockId(null); setDropIndicator(null); }} onClick={() => setSelectedBlockId(block.id)} onDoubleClick={() => { setSelectedBlockId(block.id); setEditingBlockId(block.id); }} onDragOver={(event) => updateDropIndicator(event, block.id)} onDrop={(event) => dropOnBlock(event, block.id)}>{renderBlock(block)}{selectedBlockId === block.id && <div className="canvas-block-actions"><button title="Editar elemento" aria-label="Editar elemento" onClick={(event) => { event.stopPropagation(); setEditingBlockId(block.id); }}><EditorActionIcon type="edit" /></button><button title="Arraste para mover o elemento" aria-label="Arraste para mover o elemento" draggable onDragStart={(event) => startMovingBlock(event, block.id)} onDragEnd={() => setMovingBlockId(null)}><EditorActionIcon type="move" /></button><button title="Duplicar elemento" aria-label="Duplicar elemento" onClick={(event) => { event.stopPropagation(); duplicateSelectedBlock(); }}><EditorActionIcon type="duplicate" /></button><button title="Excluir elemento" aria-label="Excluir elemento" onClick={(event) => { event.stopPropagation(); removeSelectedBlock(); }}><EditorActionIcon type="delete" /></button></div>}{editingBlockId === block.id && block.item === "Texto" && <div className="inline-editor-toolbar" onClick={(event) => event.stopPropagation()}><button title="Cor do texto" type="button">◉</button><button title="Emoji" type="button">☺</button><button title="Variáveis" type="button">{"{}"}</button><button title="Tamanho da fonte" type="button">T</button><select title="Tamanho da fonte" value={block.fontSize ?? 16} onChange={(event) => onTextStyleChange({ fontSize: Number(event.target.value) })}><option value="12">12px</option><option value="14">14px</option><option value="16">16px</option><option value="18">18px</option><option value="24">24px</option><option value="32">32px</option></select><button title="Negrito" type="button" className={block.bold ? "toolbar-active" : ""} onClick={() => onTextStyleChange({ bold: !block.bold })}><b>B</b></button><button title="Itálico" type="button" className={block.italic ? "toolbar-active" : ""} onClick={() => onTextStyleChange({ italic: !block.italic })}><i>I</i></button><button title="Sublinhado" type="button" className={block.underline ? "toolbar-active" : ""} onClick={() => onTextStyleChange({ underline: !block.underline })}><u>U</u></button><button title="Lista" type="button">☷</button><button title="Linha" type="button">—</button><button title="Alinhamento" type="button">≡</button></div>}</div>)}</div>}

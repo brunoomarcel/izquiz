@@ -32,3 +32,5 @@
 
 /* Keep the editor palette iconography at a consistent, intentional scale. */
 .component-grid button .block-icon{display:block;width:24px;height:24px;flex:none;margin:0 auto 5px;stroke-width:1.8}
+
+.editor-save-status{position:absolute;top:23px;right:34px;font-size:11px;color:#64748b}.editor-save-status-saved{color:#15803d}.editor-save-status-unsaved,.editor-save-status-saving{color:#b45309}.editor-save-status-error{color:#dc2626}
