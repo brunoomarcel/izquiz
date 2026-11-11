@@ -1,6 +1,6 @@
 services:
   izquiz:
-    image: ghcr.io/brunoomarcel/izquiz:latest
+    image: ${IZQUIZ_IMAGE:-izquiz:latest}
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
@@ -11,7 +11,8 @@ services:
       IZQUIZ_MCP_USER_ID: ${IZQUIZ_MCP_USER_ID}
       MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:-https://izquiz.stuffshub.com/mcp}
     secrets:
-      - supabase_service_role_key
+      - source: supabase_service_role_key
+        target: supabase_service_role_key
     networks:
       - vpsnet
     deploy:
@@ -34,3 +35,4 @@ networks:
 secrets:
   supabase_service_role_key:
     external: true
+    name: ${SUPABASE_SERVICE_ROLE_SECRET_NAME}

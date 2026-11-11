@@ -47,14 +47,18 @@ IZQUIZ_MCP_USER_ID=uuid_do_usuario_dono
 MCP_PUBLIC_URL=https://izquiz.stuffshub.com/mcp
 ```
 
-Em produção, o GitHub Actions cria o secret externo `supabase_service_role_key` no Docker Swarm via API do Portainer antes de pedir o redeploy. O Compose monta esse secret em `/run/secrets/supabase_service_role_key`; ele permanece no Swarm quando a stack é atualizada pelo GitOps. Para desenvolvimento local, `SUPABASE_SERVICE_ROLE_KEY` pode continuar vindo do `.env.local`.
+Em produção, o GitHub Actions conecta à VPS por SSH, cria uma versão do secret do Supabase no Docker Swarm e publica a stack com `docker stack deploy`. O secret é montado em `/run/secrets/supabase_service_role_key`; a chave não vai para a imagem nem para o arquivo `.env.production`. Para desenvolvimento local, `SUPABASE_SERVICE_ROLE_KEY` pode continuar vindo do `.env.local`.
 
-Configure os seguintes valores em **Settings > Secrets and variables > Actions** no GitHub:
+Configure os seguintes secrets em **Settings > Secrets and variables > Actions** no GitHub:
 
-- Secrets: `PORTAINER_WEBHOOK_URL` (já usado pelo deploy), `PORTAINER_API_KEY` e `SUPABASE_SERVICE_ROLE_KEY`.
-- Variables: `PORTAINER_URL` (endereço base do Portainer, sem `/api`) e, se o ambiente tiver outro nome, `PORTAINER_ENDPOINT_NAME` (o padrão é `primary`).
+- `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` e `VPS_DEPLOY_PATH` para acesso e pasta de deploy na VPS. `VPS_PORT` é opcional e assume `22`.
+- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `IZQUIZ_MCP_TOKEN` e `IZQUIZ_MCP_USER_ID`.
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` é opcional.
+- `PORTAINER_API_KEY` e `PORTAINER_WEBHOOK_URL` não são usados por esse deploy.
 
-Gere a API key na conta de administrador do Portainer e guarde-a como secret no GitHub. A chave `service_role` fica apenas no GitHub Actions e no Docker Swarm; não a coloque em `NEXT_PUBLIC_*`, no Compose ou no repositório.
+Também é possível definir as variables `NEXT_PUBLIC_APP_DOMAIN` e `MCP_PUBLIC_URL`; por padrão, usam `izquiz.stuffshub.com` e `https://izquiz.stuffshub.com/mcp`.
+
+Se a stack atual do Izquiz estiver conectada ao GitOps do Portainer, desative a atualização automática dela uma única vez para que ela não sobrescreva o deploy direto do Actions. Depois disso, o fluxo de publicação não depende de abrir o Portainer.
 
 O `SUPABASE_SERVICE_ROLE_KEY` nunca deve ser exposto ao navegador. O emissor OAuth é inferido de `NEXT_PUBLIC_SUPABASE_URL` como `/auth/v1`; `SUPABASE_AUTH_ISSUER` só precisa ser definido se o issuer for diferente. O endpoint aceita tokens OAuth emitidos pelo Supabase Auth e aplica as políticas RLS do usuário autenticado. O token privado e o `IZQUIZ_MCP_USER_ID` ficam disponíveis apenas como fallback para testes internos.
 
