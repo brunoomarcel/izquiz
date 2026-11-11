@@ -45,6 +45,7 @@ function tools() {
     { name: "izquiz_update_step", description: "Atualiza título, tipo ou configurações de uma etapa.", securitySchemes, inputSchema: { type: "object", required: ["stepId"], properties: { stepId: { type: "string" }, title: { type: "string" }, stepType: { type: "string" }, settings: { type: "object" } } } },
     { name: "izquiz_list_blocks", description: "Lista os componentes já salvos em uma etapa.", securitySchemes, inputSchema: { type: "object", required: ["stepId"], properties: { stepId: { type: "string" } } } },
     { name: "izquiz_create_block", description: "Adiciona um componente visível ao canvas da etapa. Passe o nome do componente em item (por exemplo Texto, Imagem, Botão ou Opções), o texto em content e as demais configurações em settings.", securitySchemes, inputSchema: { type: "object", required: ["stepId", "item"], properties: { stepId: { type: "string" }, item: { type: "string" }, content: { type: "string" }, settings: { type: "object" } } } },
+    { name: "izquiz_create_step_block", description: "Cria um bloco visual diretamente em uma etapa. Informe stepId, conteúdo, tipo do bloco (padrão Texto) e, opcionalmente, position (índice começando em 0) para inserir na ordem desejada.", securitySchemes, inputSchema: { type: "object", required: ["stepId", "content"], properties: { stepId: { type: "string" }, step_id: { type: "string" }, blockType: { type: "string", description: "Tipo do bloco; use Texto para um bloco de texto." }, block_type: { type: "string" }, type: { type: "string" }, item: { type: "string" }, content: { type: "string" }, text: { type: "string" }, position: { type: "integer", minimum: 0, description: "Posição 0-based; omitida, adiciona ao final." }, settings: { type: "object" } } } },
     { name: "izquiz_update_block", description: "Altera texto ou configurações de um componente salvo.", securitySchemes, inputSchema: { type: "object", required: ["blockId"], properties: { blockId: { type: "string" }, item: { type: "string" }, content: { type: "string" }, settings: { type: "object" } } } },
     { name: "izquiz_delete_block", description: "Remove um componente de uma etapa.", securitySchemes, inputSchema: { type: "object", required: ["blockId"], properties: { blockId: { type: "string" } } } },
     { name: "izquiz_reorder_steps", description: "Reordena etapas usando uma lista de IDs na ordem desejada.", securitySchemes, inputSchema: { type: "object", required: ["funnelId", "stepIds"], properties: { funnelId: { type: "string" }, stepIds: { type: "array", items: { type: "string" } } } } },
@@ -146,16 +147,48 @@ async function callTool(name: string, args: Record<string, unknown>, context: Mc
     if (queryError) throw queryError;
     return toolText({ blocks: data ?? [] });
   }
-  if (name === "izquiz_create_block") {
-    const step = await getAuthorizedStep(context, String(args.stepId));
-    const item = String(args.item ?? "").trim();
-    if (!item) throw new Error("Informe o tipo do componente em item");
-    const { data: last } = await context.supabase.from("step_blocks").select("position").eq("step_id", step.id).order("position", { ascending: false }).limit(1).maybeSingle();
+  if (name === "izquiz_create_block" || name === "izquiz_create_step_block") {
+    const isStepBlockAlias = name === "izquiz_create_step_block";
+    const stepId = String(args.stepId ?? args.step_id ?? "").trim();
+    if (!stepId) throw new Error("Informe stepId");
+    const step = await getAuthorizedStep(context, stepId);
+    const requestedType = String(args.item ?? args.blockType ?? args.block_type ?? args.type ?? (isStepBlockAlias ? "Texto" : "")).trim();
+    if (!requestedType) throw new Error("Informe o tipo do componente em item");
+    const item = ["text", "texto"].includes(requestedType.toLocaleLowerCase("pt-BR")) ? "Texto" : requestedType;
     const settings = args.settings && typeof args.settings === "object" && !Array.isArray(args.settings) ? args.settings as Record<string, unknown> : {};
     const defaultContent = item === "Texto" ? "Texto de exemplo" : item === "Alerta" ? "Atenção!" : item;
-    const content = typeof args.content === "string" ? args.content : defaultContent;
+    const content = typeof args.content === "string" ? args.content : typeof args.text === "string" ? args.text : defaultContent;
+    let position: number;
+    const hasRequestedPosition = args.position !== undefined && args.position !== null;
+    if (hasRequestedPosition) {
+      const requestedPosition = typeof args.position === "number" ? args.position : Number(args.position);
+      if (!Number.isSafeInteger(requestedPosition) || requestedPosition < 0) throw new Error("position precisa ser um inteiro igual ou maior que zero");
+      const { data: blocks, error: listError } = await context.supabase.from("step_blocks").select("id, position").eq("step_id", step.id).order("position", { ascending: true });
+      if (listError) throw listError;
+      const orderedBlocks = blocks ?? [];
+      position = Math.min(requestedPosition, orderedBlocks.length);
+      if (position < orderedBlocks.length) {
+        const maxPosition = orderedBlocks.reduce((max, block) => Math.max(max, Number(block.position) || 0), -1);
+        const temporaryBase = maxPosition + orderedBlocks.length + 100;
+        for (let index = 0; index < orderedBlocks.length; index += 1) {
+          const { error: moveError } = await context.supabase.from("step_blocks").update({ position: temporaryBase + index }).eq("id", orderedBlocks[index].id);
+          if (moveError) throw moveError;
+        }
+        for (let index = 0; index < orderedBlocks.length; index += 1) {
+          const targetPosition = index < position ? index : index + 1;
+          const { error: moveError } = await context.supabase.from("step_blocks").update({ position: targetPosition }).eq("id", orderedBlocks[index].id);
+          if (moveError) throw moveError;
+        }
+      } else {
+        position = orderedBlocks.length ? Number(orderedBlocks[orderedBlocks.length - 1].position) + 1 : 0;
+      }
+    } else {
+      const { data: last, error: lastError } = await context.supabase.from("step_blocks").select("position").eq("step_id", step.id).order("position", { ascending: false }).limit(1).maybeSingle();
+      if (lastError) throw lastError;
+      position = (last?.position ?? -1) + 1;
+    }
     const payload = { ...settings, content };
-    const { data, error: queryError } = await context.supabase.from("step_blocks").insert({ step_id: step.id, position: (last?.position ?? -1) + 1, block_type: item, content: payload }).select("id, step_id, position, block_type, content").single();
+    const { data, error: queryError } = await context.supabase.from("step_blocks").insert({ step_id: step.id, position, block_type: item, content: payload }).select("id, step_id, position, block_type, content").single();
     if (queryError) throw queryError;
     return toolText({ block: data });
   }
