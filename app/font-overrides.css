@@ -436,6 +436,15 @@ input, button {
 .step-item[draggable] { cursor: grab; transition: opacity .16s ease, transform .16s ease; }
 .step-item[draggable]:active { cursor: grabbing; }
 .step-item.step-dragging { opacity: .45; transform: scale(.98); }
+
+/* Keep long step names and their controls inside the narrow editor column. */
+.editor-page > .step-column { min-width: 0; overflow-x: hidden; overflow-y: auto; }
+.editor-page > .component-column { min-width: 0; }
+.step-list, .step-item, .step-item-button { min-width: 0; max-width: 100%; }
+.step-item-button { box-sizing: border-box; }
+.step-item-button > span:first-child { display: block; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step-item-button .step-actions { gap: 2px; }
+.step-menu { max-width: calc(100% - 16px); }
 body, button, input, textarea, select { font-family: "Poppins", Arial, Helvetica, sans-serif; }
 .flow-toolbar { display:flex; align-items:center; justify-content:space-between; padding:24px 28px 10px; background:#fff; border-bottom:1px solid #e7edf5; }
 .flow-toolbar h2 { margin:0; font-size:18px; color:#13213b; }

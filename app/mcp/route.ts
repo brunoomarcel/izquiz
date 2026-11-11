@@ -19,7 +19,7 @@ function response(body: unknown, status = 200, extraHeaders: Record<string, stri
 function error(id: JsonRpcRequest["id"], code: number, message: string) { return response({ jsonrpc: "2.0", id: id ?? null, error: { code, message } }, 200); }
 function result(id: JsonRpcRequest["id"], value: unknown) { return response({ jsonrpc: "2.0", id: id ?? null, result: value }); }
 
-function toolText(value: unknown) { return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }], structuredContent: value }; }
+function toolText(value: Record<string, unknown>) { return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }], structuredContent: value }; }
 
 function tools() {
   const securitySchemes = [{ type: "oauth2", scopes: ["openid", "email", "profile"] }];
@@ -31,6 +31,10 @@ function tools() {
     { name: "izquiz_list_steps", description: "Lista as etapas de um funil na ordem atual.", securitySchemes, inputSchema: { type: "object", required: ["funnelId"], properties: { funnelId: { type: "string" } } } },
     { name: "izquiz_create_step", description: "Adiciona uma etapa ao final do funil.", securitySchemes, inputSchema: { type: "object", required: ["funnelId", "title"], properties: { funnelId: { type: "string" }, title: { type: "string" }, stepType: { type: "string", enum: ["intro", "question", "break", "form", "landing", "result"] } } } },
     { name: "izquiz_update_step", description: "Atualiza título, tipo ou configurações de uma etapa.", securitySchemes, inputSchema: { type: "object", required: ["stepId"], properties: { stepId: { type: "string" }, title: { type: "string" }, stepType: { type: "string" }, settings: { type: "object" } } } },
+    { name: "izquiz_list_blocks", description: "Lista os componentes já salvos em uma etapa.", securitySchemes, inputSchema: { type: "object", required: ["stepId"], properties: { stepId: { type: "string" } } } },
+    { name: "izquiz_create_block", description: "Adiciona um componente visível ao canvas da etapa. Passe o nome do componente em item (por exemplo Texto, Imagem, Botão ou Opções), o texto em content e as demais configurações em settings.", securitySchemes, inputSchema: { type: "object", required: ["stepId", "item"], properties: { stepId: { type: "string" }, item: { type: "string" }, content: { type: "string" }, settings: { type: "object" } } } },
+    { name: "izquiz_update_block", description: "Altera texto ou configurações de um componente salvo.", securitySchemes, inputSchema: { type: "object", required: ["blockId"], properties: { blockId: { type: "string" }, item: { type: "string" }, content: { type: "string" }, settings: { type: "object" } } } },
+    { name: "izquiz_delete_block", description: "Remove um componente de uma etapa.", securitySchemes, inputSchema: { type: "object", required: ["blockId"], properties: { blockId: { type: "string" } } } },
     { name: "izquiz_reorder_steps", description: "Reordena etapas usando uma lista de IDs na ordem desejada.", securitySchemes, inputSchema: { type: "object", required: ["funnelId", "stepIds"], properties: { funnelId: { type: "string" }, stepIds: { type: "array", items: { type: "string" } } } } },
     { name: "izquiz_list_metrics", description: "Retorna pessoas, eventos e taxa de conclusão de um funil.", securitySchemes, inputSchema: { type: "object", required: ["funnelId"], properties: { funnelId: { type: "string" } } } },
   ];
@@ -72,11 +76,19 @@ async function getFunnel(context: McpContext, funnelId: string) {
   return data;
 }
 
+async function getAuthorizedStep(context: McpContext, stepId: string) {
+  const { data: step, error: stepError } = await context.supabase.from("funnel_steps").select("id, funnel_id").eq("id", stepId).maybeSingle();
+  if (stepError) throw stepError;
+  if (!step) throw new Error("Etapa não encontrada ou não autorizada");
+  await getFunnel(context, step.funnel_id);
+  return step;
+}
+
 async function callTool(name: string, args: Record<string, unknown>, context: McpContext) {
   if (name === "izquiz_list_funnels") {
     const { data, error: queryError } = await context.supabase.from("funnels").select("id, name, slug, status, published_at, updated_at").in("workspace_id", context.workspaceIds).order("created_at", { ascending: false });
     if (queryError) throw queryError;
-    return toolText(data ?? []);
+    return toolText({ funnels: data ?? [] });
   }
   if (name === "izquiz_get_funnel") {
     let funnel = args.funnelId ? await getFunnel(context, String(args.funnelId)) : null;
@@ -114,7 +126,49 @@ async function callTool(name: string, args: Record<string, unknown>, context: Mc
     await getFunnel(context, String(args.funnelId));
     const { data, error: queryError } = await context.supabase.from("funnel_steps").select("id, position, title, step_type, settings").eq("funnel_id", String(args.funnelId)).order("position");
     if (queryError) throw queryError;
-    return toolText(data ?? []);
+    return toolText({ steps: data ?? [] });
+  }
+  if (name === "izquiz_list_blocks") {
+    const step = await getAuthorizedStep(context, String(args.stepId));
+    const { data, error: queryError } = await context.supabase.from("step_blocks").select("id, step_id, position, block_type, content").eq("step_id", step.id).order("position");
+    if (queryError) throw queryError;
+    return toolText({ blocks: data ?? [] });
+  }
+  if (name === "izquiz_create_block") {
+    const step = await getAuthorizedStep(context, String(args.stepId));
+    const item = String(args.item ?? "").trim();
+    if (!item) throw new Error("Informe o tipo do componente em item");
+    const { data: last } = await context.supabase.from("step_blocks").select("position").eq("step_id", step.id).order("position", { ascending: false }).limit(1).maybeSingle();
+    const settings = args.settings && typeof args.settings === "object" && !Array.isArray(args.settings) ? args.settings as Record<string, unknown> : {};
+    const defaultContent = item === "Texto" ? "Texto de exemplo" : item === "Alerta" ? "Atenção!" : item;
+    const content = typeof args.content === "string" ? args.content : defaultContent;
+    const payload = { ...settings, content };
+    const { data, error: queryError } = await context.supabase.from("step_blocks").insert({ step_id: step.id, position: (last?.position ?? -1) + 1, block_type: item, content: payload }).select("id, step_id, position, block_type, content").single();
+    if (queryError) throw queryError;
+    return toolText({ block: data });
+  }
+  if (name === "izquiz_update_block") {
+    const { data: existing, error: blockError } = await context.supabase.from("step_blocks").select("id, step_id, block_type, content").eq("id", String(args.blockId)).maybeSingle();
+    if (blockError) throw blockError;
+    if (!existing) throw new Error("Componente não encontrado ou não autorizado");
+    await getAuthorizedStep(context, existing.step_id);
+    const previous = existing.content && typeof existing.content === "object" && !Array.isArray(existing.content) ? existing.content as Record<string, unknown> : {};
+    const settings = args.settings && typeof args.settings === "object" && !Array.isArray(args.settings) ? args.settings as Record<string, unknown> : {};
+    const content = { ...previous, ...settings, ...(typeof args.content === "string" ? { content: args.content } : {}) };
+    const patch: Record<string, unknown> = { content };
+    if (typeof args.item === "string" && args.item.trim()) patch.block_type = args.item.trim();
+    const { data, error: queryError } = await context.supabase.from("step_blocks").update(patch).eq("id", existing.id).select("id, step_id, position, block_type, content").single();
+    if (queryError) throw queryError;
+    return toolText({ block: data });
+  }
+  if (name === "izquiz_delete_block") {
+    const { data: existing, error: blockError } = await context.supabase.from("step_blocks").select("id, step_id").eq("id", String(args.blockId)).maybeSingle();
+    if (blockError) throw blockError;
+    if (!existing) throw new Error("Componente não encontrado ou não autorizado");
+    await getAuthorizedStep(context, existing.step_id);
+    const { error: deleteError } = await context.supabase.from("step_blocks").delete().eq("id", existing.id);
+    if (deleteError) throw deleteError;
+    return toolText({ deleted: true, blockId: existing.id });
   }
   if (name === "izquiz_create_step") {
     const funnel = await getFunnel(context, String(args.funnelId));
