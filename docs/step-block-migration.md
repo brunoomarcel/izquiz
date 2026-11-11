@@ -44,4 +44,4 @@ Os blocos que existiam antes da migração não estão nessa lista e não são r
 
 O editor sincroniza cada etapa por uma função transacional que atualiza UUIDs existentes, cria os blocos novos, remove os excluídos e atribui posições sem colisão. A versão `funnel_steps.updated_at` funciona como controle otimista: uma gravação feita sobre uma revisão antiga falha para evitar sobrescrita silenciosa.
 
-Esta migração ainda precisa ser aplicada ao banco para habilitar `sync_step_blocks` e converter os textos legados. Não foi executada no projeto Supabase remoto durante esta tarefa.
+Migração aplicada ao projeto Supabase `izquiz` em 2026-11-11. A verificação confirmou 3 etapas migradas, 19 textos convertidos, 19 entradas guardadas no backup privado, nenhuma chave `textBlocks` restante e preservação do FAQ canônico preexistente. A função `sync_step_blocks` está criada.

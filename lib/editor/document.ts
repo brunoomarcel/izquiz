@@ -8,6 +8,23 @@ type PersistedBlock = {
   content: unknown;
 };
 
+type ClonableBlock = {
+  position: number;
+  block_type: string;
+  content: unknown;
+};
+
+export function buildClonedBlockRows(stepId: string, blocks: ClonableBlock[]) {
+  return [...blocks]
+    .sort((left, right) => left.position - right.position)
+    .map((block, position) => ({
+      step_id: stepId,
+      position,
+      block_type: block.block_type,
+      content: block.content,
+    }));
+}
+
 export function groupBlocksByStep(stepIds: string[], rows: PersistedBlock[]): Record<string, CanvasBlock[]> {
   const document = Object.fromEntries(stepIds.map((stepId) => [stepId, [] as CanvasBlock[]])) as Record<string, CanvasBlock[]>;
 

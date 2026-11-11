@@ -39,7 +39,7 @@ import { DomainSettings } from "@/components/editor/DomainSettings";
 import { DomainShareView } from "@/components/editor/DomainShareView";
 import { getPublicBaseUrl } from "@/lib/public-url";
 import type { CanvasBlock, EditorStep } from "@/components/editor/types";
-import { groupBlocksByStep, serializeCanvasBlocks } from "@/lib/editor/document";
+import { buildClonedBlockRows, groupBlocksByStep, serializeCanvasBlocks } from "@/lib/editor/document";
 import { readEditorDocumentCache, writeEditorDocumentCache } from "@/lib/editor/cache";
 
 type Screen = "Dashboard" | "Analytics";
@@ -413,18 +413,47 @@ function Dashboard({ supabase, userId, openEditor, notify }: { supabase: NonNull
   async function duplicateFunnel(funnel: FunnelItem) {
     if (!supabase || !workspaceId || duplicating) return;
     setDuplicating(true);
-    const suffix = crypto.randomUUID().slice(0, 8);
-    const created = await supabase.from("funnels").insert({ workspace_id: workspaceId, name: `${funnel.name} (cópia)`, slug: `${funnel.slug}-copia-${suffix}`, status: "draft" }).select("id, name, slug, status").single();
-    if (created.error || !created.data) { notify("Não foi possível duplicar o funil"); setDuplicating(false); return; }
-    const sourceSteps = await supabase.from("funnel_steps").select("position, title, step_type, settings").eq("funnel_id", funnel.id).order("position");
-    if (sourceSteps.error) { notify("Funil duplicado, mas não foi possível copiar os passos"); } else if (sourceSteps.data?.length) {
-      const copiedSteps = await supabase.from("funnel_steps").insert(sourceSteps.data.map((step) => ({ ...step, funnel_id: created.data.id })));
-      if (copiedSteps.error) notify("Funil duplicado, mas não foi possível copiar os passos");
+    let createdId: string | null = null;
+    try {
+      const suffix = crypto.randomUUID().slice(0, 8);
+      const created = await supabase.from("funnels").insert({ workspace_id: workspaceId, name: `${funnel.name} (cópia)`, slug: `${funnel.slug}-copia-${suffix}`, status: "draft" }).select("id, name, slug, status").single();
+      if (created.error || !created.data) throw created.error ?? new Error("O funil não foi criado.");
+      createdId = created.data.id;
+
+      const sourceSteps = await supabase.from("funnel_steps").select("position, title, step_type, settings, step_blocks(position, block_type, content)").eq("funnel_id", funnel.id).order("position");
+      if (sourceSteps.error) throw sourceSteps.error;
+
+      for (const step of sourceSteps.data ?? []) {
+        const copiedStep = await supabase.from("funnel_steps").insert({
+          funnel_id: createdId,
+          position: step.position,
+          title: step.title,
+          step_type: step.step_type,
+          settings: step.settings,
+        }).select("id").single();
+        if (copiedStep.error || !copiedStep.data) throw copiedStep.error ?? new Error("Não foi possível copiar uma etapa.");
+
+        const blockRows = buildClonedBlockRows(copiedStep.data.id, step.step_blocks ?? []);
+        if (blockRows.length) {
+          const copiedBlocks = await supabase.from("step_blocks").insert(blockRows);
+          if (copiedBlocks.error) throw copiedBlocks.error;
+        }
+      }
+
+      setFunnels((current) => [{ ...created.data, folder_id: null, leads: 0 }, ...current]);
+      setOpenMenuId(null);
+      notify("Funil duplicado com etapas e elementos");
+    } catch (error) {
+      if (createdId) {
+        const rollback = await supabase.from("funnels").delete().eq("id", createdId).eq("workspace_id", workspaceId);
+        if (rollback.error) notify(`A duplicação falhou e a cópia incompleta ${createdId} precisa ser removida manualmente.`);
+        else notify(`Não foi possível duplicar o funil: ${error instanceof Error ? error.message : "erro inesperado"}`);
+      } else {
+        notify(`Não foi possível duplicar o funil: ${error instanceof Error ? error.message : "erro inesperado"}`);
+      }
+    } finally {
+      setDuplicating(false);
     }
-    setFunnels((current) => [{ ...created.data, folder_id: null, leads: 0 }, ...current]);
-    setOpenMenuId(null);
-    setDuplicating(false);
-    notify("Funil duplicado");
   }
 
   return <><div className="dashboard-page"><div className="content-card dashboard-card" onClick={() => setOpenMenuId(null)}><div className="filter-tabs"><button className={activeTab === "Todos" ? "active" : ""} onClick={() => { setActiveTab("Todos"); setSelectedFolder(null); }}>Todos</button><button className={activeTab === "Pastas" ? "active" : ""} onClick={() => { setActiveTab("Pastas"); setSelectedFolder(null); }}>Pastas</button><button className={activeTab === "Funis" ? "active" : ""} onClick={() => { setActiveTab("Funis"); setSelectedFolder(null); }}>Funis</button></div><div className="dashboard-actions"><button className="outline-btn" onClick={() => setShowFolderModal(true)} disabled={creatingFolder}>＋ Nova Pasta</button><button className="primary-btn" onClick={() => setShowCreateModal(true)} disabled={creating || loading}>＋ Novo Funil</button></div>{folders.length > 0 && <div className="folder-list"><span>Pastas</span>{folders.map((folder) => <button key={folder.id} onClick={() => notify("Pasta: " + folder.name)}><ActionIcon type="folder" /> {folder.name}</button>)}</div>}{loading ? <div className="dashboard-empty">Carregando seus funis...</div> : activeTab === "Pastas" && !selectedFolder ? folders.length === 0 ? <div className="dashboard-empty">Você ainda não tem pastas.</div> : <div className="folder-grid">{folders.map((folder) => <button className="folder-card" key={folder.id} onClick={() => setSelectedFolder(folder)}><span className="folder-card-icon"><ActionIcon type="folder" /></span><strong>{folder.name}</strong><span>{funnels.filter((funnel) => funnel.folder_id === folder.id).length} Funis</span><b role="button" tabIndex={0} aria-label="Excluir pasta" onClick={(event) => { event.stopPropagation(); setFolderToDelete(folder); }}>•••</b></button>)}</div> : selectedFolder ? <div className="folder-detail"><button className="back-folder" onClick={() => setSelectedFolder(null)}>‹ Voltar</button><h2><ActionIcon type="folder" /> {selectedFolder.name}</h2>{funnels.filter((funnel) => funnel.folder_id === selectedFolder.id).length === 0 ? <div className="dashboard-empty">Esta pasta ainda não tem funis.</div> : funnels.filter((funnel) => funnel.folder_id === selectedFolder.id).map((funnel) => <div className="funnel-card" key={funnel.id}><button className="funnel-open" onClick={() => openEditor("blank", funnel.id)}><span><span className="funnel-icon">◉</span><strong>{funnel.name}</strong></span><p><b>{funnel.leads}</b> Leads</p></button><button className="funnel-more" aria-label={`Ações de ${funnel.name}`} onClick={(event) => { event.stopPropagation(); setOpenMenuId(openMenuId === funnel.id ? null : funnel.id); }}>•••</button>{openMenuId === funnel.id && <FunnelMenu funnel={funnel} duplicating={duplicating} onEdit={() => { setOpenMenuId(null); openEditor("blank", funnel.id); }} onDuplicate={() => duplicateFunnel(funnel)} onAddToFolder={() => { setOpenMenuId(null); setFunnelToMove(funnel); }} onRemoveFromFolder={() => { setOpenMenuId(null); removeFunnelFromFolder(funnel); }} onRename={() => { setOpenMenuId(null); setFunnelToRename(funnel); }} onDelete={() => { setOpenMenuId(null); setFunnelToDelete({ id: funnel.id, name: funnel.name }); }} notify={notify} />}</div>)} </div> : funnels.length === 0 ? <div className="dashboard-empty">Você ainda não tem funis. Crie seu primeiro funil.</div> : funnels.map((funnel) => <FunnelCard key={funnel.id} funnel={funnel} openEditor={openEditor} openMenuId={openMenuId} setOpenMenuId={setOpenMenuId} duplicateFunnel={duplicateFunnel} duplicating={duplicating} setFunnelToDelete={setFunnelToDelete} setFunnelToMove={setFunnelToMove} removeFunnelFromFolder={removeFunnelFromFolder} setFunnelToRename={setFunnelToRename} notify={notify} />)}</div></div>{showCreateModal && <CreateFunnelModal busy={creating} onCancel={() => !creating && setShowCreateModal(false)} onCreate={createFunnel} />}{showFolderModal && <CreateFolderModal busy={creatingFolder} onCancel={() => !creatingFolder && setShowFolderModal(false)} onCreate={createFolder} />}{funnelToRename && <RenameFunnelModal funnel={funnelToRename} busy={renamingFunnel} onCancel={() => !renamingFunnel && setFunnelToRename(null)} onRename={renameFunnel} />}{funnelToMove && <AddToFolderModal folders={folders} busy={movingFunnel} onCancel={() => !movingFunnel && setFunnelToMove(null)} onAdd={addFunnelToFolder} />}{funnelToDelete && <ConfirmModal title="Excluir funil?" description={`Tem certeza que deseja excluir “${funnelToDelete.name}”? Esta ação não pode ser desfeita.`} confirmLabel={deleting ? "Excluindo..." : "Excluir funil"} onCancel={() => !deleting && setFunnelToDelete(null)} onConfirm={deleteFunnel} />}{folderToDelete && <ConfirmModal title="Excluir pasta?" description={`Tem certeza que deseja excluir a pasta “${folderToDelete.name}”? Os funis serão mantidos, mas ficarão sem pasta.`} confirmLabel={deletingFolder ? "Excluindo..." : "Excluir pasta"} onCancel={() => !deletingFolder && setFolderToDelete(null)} onConfirm={deleteFolder} />}</>;

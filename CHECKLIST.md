@@ -94,7 +94,7 @@ Legenda: `[x]` completo, `[~]` parcialmente implementado, `[ ]` pendente.
 - [x] Preservar UUIDs dos blocos e sincronizar criação, edição, exclusão e ordem por operação transacional.
 - [x] Exibir estado de salvamento e rejeitar gravações baseadas em uma revisão antiga.
 - [x] Preparar migração dos `settings.textBlocks` com backup privado, ordenação determinística e rollback documentado.
-- [ ] Aplicar a migração no banco Supabase depois de revisão; produção permaneceu intacta nesta tarefa.
+- [x] Aplicar a migração no Supabase `izquiz`; conferidos 19 textos migrados, backup de 19 entradas, 3 etapas sem JSON legado e FAQ preservado.
 - [ ] Validar publicação e visualização pública do funil após a migração.
 - [ ] Testar recuperação após recarregar a página em ambiente integrado ao banco.
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { groupBlocksByStep, legacyTextBlocksToRows, serializeCanvasBlocks } from "../lib/editor/document.ts";
+import { buildClonedBlockRows, groupBlocksByStep, legacyTextBlocksToRows, serializeCanvasBlocks } from "../lib/editor/document.ts";
 
 test("loads canonical rows with their stable database IDs and order", () => {
   const document = groupBlocksByStep(["step-a", "step-empty"], [
@@ -19,6 +19,16 @@ test("serializes a canvas snapshot without its transient local IDs", () => {
   ]), [
     { id: "stable-id", step_id: "step-a", position: 0, block_type: "Texto", content: { content: "Texto", fontSize: 18 } },
     { id: undefined, step_id: "step-a", position: 1, block_type: "Imagem", content: { content: "", imageUrl: "https://example.test/image.png" } },
+  ]);
+});
+
+test("prepares cloned blocks with new step IDs, original order, and full properties", () => {
+  assert.deepEqual(buildClonedBlockRows("new-step", [
+    { position: 4, block_type: "Botão", content: { content: "Continuar", style: "primary", navigation: { type: "next" } } },
+    { position: 1, block_type: "Imagem", content: { content: "", imageUrl: "https://example.test/image.png", width: 75 } },
+  ]), [
+    { step_id: "new-step", position: 0, block_type: "Imagem", content: { content: "", imageUrl: "https://example.test/image.png", width: 75 } },
+    { step_id: "new-step", position: 1, block_type: "Botão", content: { content: "Continuar", style: "primary", navigation: { type: "next" } } },
   ]);
 });
 
