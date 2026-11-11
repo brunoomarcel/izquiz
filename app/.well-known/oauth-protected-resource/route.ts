@@ -4,7 +4,8 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const resource = process.env.MCP_PUBLIC_URL ?? `${defaultDomain}/mcp`;
-  const authorizationServer = process.env.SUPABASE_AUTH_ISSUER;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/+$/, "");
+  const authorizationServer = process.env.SUPABASE_AUTH_ISSUER ?? (supabaseUrl ? `${supabaseUrl}/auth/v1` : undefined);
   if (!authorizationServer) {
     return Response.json({ error: "SUPABASE_AUTH_ISSUER não configurado" }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }

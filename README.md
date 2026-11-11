@@ -42,18 +42,18 @@ O endpoint MCP fica em `/mcp` e expõe ferramentas para administrar funis, etapa
 Para habilitá-lo no servidor, configure no ambiente de produção:
 
 ```env
-SUPABASE_SERVICE_ROLE_KEY=chave_secreta_do_supabase
 IZQUIZ_MCP_TOKEN=token_privado_longo_e_aleatorio
 IZQUIZ_MCP_USER_ID=uuid_do_usuario_dono
 MCP_PUBLIC_URL=https://izquiz.stuffshub.com/mcp
-SUPABASE_AUTH_ISSUER=https://seu-projeto.supabase.co/auth/v1
 ```
 
-O `SUPABASE_SERVICE_ROLE_KEY` nunca deve ser exposto ao navegador. O endpoint aceita tokens OAuth emitidos pelo Supabase Auth e aplica as políticas RLS do usuário autenticado. O token privado e o `IZQUIZ_MCP_USER_ID` ficam disponíveis apenas como fallback para testes internos.
+Em stacks Docker Swarm/Portainer, crie uma vez um secret externo chamado `supabase_service_role_key` em **Environment > Secrets** e cole nele a `service_role` key do Supabase. O Compose monta esse secret em `/run/secrets/supabase_service_role_key`; ele permanece no Swarm quando a stack é atualizada pelo GitOps. Não cadastre essa chave como variável comum do stack. Para desenvolvimento local, `SUPABASE_SERVICE_ROLE_KEY` pode continuar vindo do `.env.local`.
+
+O `SUPABASE_SERVICE_ROLE_KEY` nunca deve ser exposto ao navegador. O emissor OAuth é inferido de `NEXT_PUBLIC_SUPABASE_URL` como `/auth/v1`; `SUPABASE_AUTH_ISSUER` só precisa ser definido se o issuer for diferente. O endpoint aceita tokens OAuth emitidos pelo Supabase Auth e aplica as políticas RLS do usuário autenticado. O token privado e o `IZQUIZ_MCP_USER_ID` ficam disponíveis apenas como fallback para testes internos.
 
 ### Estado da integração com o ChatGPT
 
-O endpoint agora publica `/.well-known/oauth-protected-resource` e a tela `/oauth/consent` para o OAuth 2.1 do Supabase Auth. No painel do Supabase, habilite `Authentication > OAuth Server`, use `https://izquiz.stuffshub.com` como Site URL, mantenha `/oauth/consent` como Authorization Path, habilite o registro dinâmico de clientes e confirme que o projeto usa chaves JWT assimétricas. Depois configure `SUPABASE_AUTH_ISSUER` com `https://<project-ref>.supabase.co/auth/v1`.
+O endpoint publica `/.well-known/oauth-protected-resource` e a tela `/oauth/consent` para o OAuth 2.1 do Supabase Auth. No painel do Supabase, habilite `Authentication > OAuth Server`, use `https://izquiz.stuffshub.com` como Site URL, mantenha `/oauth/consent` como Authorization Path, habilite o registro dinâmico de clientes e confirme que o projeto usa chaves JWT assimétricas.
 
 O ChatGPT poderá descobrir o provedor, solicitar login/consentimento usando a conta existente do Izquiz e chamar as ferramentas com o usuário correto, sem compartilhar uma chave de serviço.
 

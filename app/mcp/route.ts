@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -10,6 +11,17 @@ type JsonRpcRequest = { jsonrpc?: string; id?: string | number | null; method?: 
 type McpContext = { supabase: SupabaseClient<any>; workspaceIds: string[] };
 
 const MCP_PROTOCOL_VERSION = "2025-06-18";
+
+function getServiceRoleKey() {
+  const envKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  if (envKey) return envKey;
+  try {
+    const secretPath = process.env.SUPABASE_SERVICE_ROLE_KEY_FILE ?? "/run/secrets/supabase_service_role_key";
+    return readFileSync(secretPath, "utf8").trim() || null;
+  } catch {
+    return null;
+  }
+}
 
 function headers(extra: Record<string, string> = {}) {
   return { "Content-Type": "application/json", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Authorization, Content-Type, Mcp-Session-Id, MCP-Protocol-Version", "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS", ...extra };
@@ -50,7 +62,7 @@ async function getContext(request: Request): Promise<McpContext | Response> {
   let supabase: McpContext["supabase"];
   let userId: string | null = null;
   if (expected && bearer === expected) {
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const serviceKey = getServiceRoleKey();
     userId = process.env.IZQUIZ_MCP_USER_ID ?? null;
     if (!serviceKey || !userId) return response({ error: "Fallback MCP não configurado no servidor" }, 503);
     supabase = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
