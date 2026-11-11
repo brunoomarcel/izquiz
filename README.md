@@ -47,7 +47,14 @@ IZQUIZ_MCP_USER_ID=uuid_do_usuario_dono
 MCP_PUBLIC_URL=https://izquiz.stuffshub.com/mcp
 ```
 
-Em stacks Docker Swarm/Portainer, crie uma vez um secret externo chamado `supabase_service_role_key` em **Environment > Secrets** e cole nele a `service_role` key do Supabase. O Compose monta esse secret em `/run/secrets/supabase_service_role_key`; ele permanece no Swarm quando a stack é atualizada pelo GitOps. Não cadastre essa chave como variável comum do stack. Para desenvolvimento local, `SUPABASE_SERVICE_ROLE_KEY` pode continuar vindo do `.env.local`.
+Em produção, o GitHub Actions cria o secret externo `supabase_service_role_key` no Docker Swarm via API do Portainer antes de pedir o redeploy. O Compose monta esse secret em `/run/secrets/supabase_service_role_key`; ele permanece no Swarm quando a stack é atualizada pelo GitOps. Para desenvolvimento local, `SUPABASE_SERVICE_ROLE_KEY` pode continuar vindo do `.env.local`.
+
+Configure os seguintes valores em **Settings > Secrets and variables > Actions** no GitHub:
+
+- Secrets: `PORTAINER_WEBHOOK_URL` (já usado pelo deploy), `PORTAINER_API_KEY` e `SUPABASE_SERVICE_ROLE_KEY`.
+- Variables: `PORTAINER_URL` (endereço base do Portainer, sem `/api`) e, se o ambiente tiver outro nome, `PORTAINER_ENDPOINT_NAME` (o padrão é `primary`).
+
+Gere a API key na conta de administrador do Portainer e guarde-a como secret no GitHub. A chave `service_role` fica apenas no GitHub Actions e no Docker Swarm; não a coloque em `NEXT_PUBLIC_*`, no Compose ou no repositório.
 
 O `SUPABASE_SERVICE_ROLE_KEY` nunca deve ser exposto ao navegador. O emissor OAuth é inferido de `NEXT_PUBLIC_SUPABASE_URL` como `/auth/v1`; `SUPABASE_AUTH_ISSUER` só precisa ser definido se o issuer for diferente. O endpoint aceita tokens OAuth emitidos pelo Supabase Auth e aplica as políticas RLS do usuário autenticado. O token privado e o `IZQUIZ_MCP_USER_ID` ficam disponíveis apenas como fallback para testes internos.
 

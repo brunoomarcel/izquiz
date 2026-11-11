@@ -34,6 +34,44 @@ jobs:
             NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
             NEXT_PUBLIC_APP_DOMAIN=${{ vars.NEXT_PUBLIC_APP_DOMAIN || 'izquiz.stuffshub.com' }}
 
+      - name: Garantir secret do Supabase no Docker Swarm
+        env:
+          PORTAINER_WEBHOOK_URL: ${{ secrets.PORTAINER_WEBHOOK_URL }}
+          PORTAINER_URL: ${{ vars.PORTAINER_URL }}
+          PORTAINER_ENDPOINT_NAME: ${{ vars.PORTAINER_ENDPOINT_NAME || 'primary' }}
+          PORTAINER_API_KEY: ${{ secrets.PORTAINER_API_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$PORTAINER_WEBHOOK_URL" ]; then
+            echo "Webhook do Portainer ainda não configurado; secret não criado e redeploy ignorado."
+            exit 0
+          fi
+
+          : "${PORTAINER_URL:?Configure a variável PORTAINER_URL no GitHub Actions}"
+          : "${PORTAINER_API_KEY:?Configure o secret PORTAINER_API_KEY no GitHub Actions}"
+          : "${SUPABASE_SERVICE_ROLE_KEY:?Configure o secret SUPABASE_SERVICE_ROLE_KEY no GitHub Actions}"
+
+          API_BASE="${PORTAINER_URL%/}/api"
+          ENDPOINTS="$(curl --fail --silent --show-error -H "X-API-Key: $PORTAINER_API_KEY" "$API_BASE/endpoints")"
+          ENDPOINT_ID="$(printf '%s' "$ENDPOINTS" | jq -er --arg name "$PORTAINER_ENDPOINT_NAME" '[.[] | select(.Name == $name)] | if length == 1 then .[0].Id else error("Ambiente Portainer não encontrado ou nome duplicado") end')"
+          SECRETS_URL="$API_BASE/endpoints/$ENDPOINT_ID/docker/secrets"
+          SECRET_NAME="supabase_service_role_key"
+          EXISTING_SECRETS="$(curl --fail --silent --show-error -H "X-API-Key: $PORTAINER_API_KEY" "$SECRETS_URL")"
+
+          if printf '%s' "$EXISTING_SECRETS" | jq -e --arg name "$SECRET_NAME" 'any(.[]; .Spec.Name == $name)' >/dev/null; then
+            echo "Secret $SECRET_NAME já existe no Swarm."
+          else
+            SECRET_DATA="$(printf '%s' "$SUPABASE_SERVICE_ROLE_KEY" | base64 -w 0)"
+            PAYLOAD="$(jq -n --arg name "$SECRET_NAME" --arg data "$SECRET_DATA" '{Name:$name,Data:$data}')"
+            curl --fail --silent --show-error -X POST \
+              -H "X-API-Key: $PORTAINER_API_KEY" \
+              -H "Content-Type: application/json" \
+              --data-raw "$PAYLOAD" "$SECRETS_URL/create" >/dev/null
+            echo "Secret $SECRET_NAME criado no Swarm pelo Portainer."
+          fi
+
       - name: Solicitar redeploy no Portainer
         env:
           PORTAINER_WEBHOOK_URL: ${{ secrets.PORTAINER_WEBHOOK_URL }}
