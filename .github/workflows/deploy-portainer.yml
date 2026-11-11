@@ -141,6 +141,9 @@ jobs:
           . ./.env.production
           set +a
 
+          # Compose needs the exact versioned Docker Secret name created above.
+          export SUPABASE_SERVICE_ROLE_SECRET_NAME="$SECRET_NAME"
+
           docker info --format '{{.Swarm.LocalNodeState}}' | grep -qx active
           export IZQUIZ_IMAGE="izquiz:${TAG}"
           docker build \
@@ -150,6 +153,11 @@ jobs:
             --build-arg "NEXT_PUBLIC_APP_DOMAIN=$NEXT_PUBLIC_APP_DOMAIN" \
             -t "$IZQUIZ_IMAGE" .
 
+          STACK_CONFIG="$(docker stack config -c docker-compose.portainer.yml)"
+          if ! printf '%s' "$STACK_CONFIG" | grep -Fq "$SECRET_NAME"; then
+            echo "A stack não resolveu o secret versionado do Supabase." >&2
+            exit 1
+          fi
           docker stack deploy --resolve-image never -c docker-compose.portainer.yml izquiz
 
           # Remove versões antigas apenas depois do serviço trocar para o novo secret.
